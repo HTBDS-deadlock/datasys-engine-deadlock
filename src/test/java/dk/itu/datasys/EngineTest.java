@@ -6,6 +6,6 @@ import org.junit.jupiter.api.Test;
 class EngineTest {
     @Test
     void teamName() {
-        assertEquals("Team deadlock", new Engine().teamName());
+        assertEquals("Team ...", new Engine().teamName());
     }
 }
