@@ -1,0 +1,15 @@
+{
+  "trips": {
+    "columns": [
+      {"name": "city", "type": "STRING"},
+      {"name": "distance", "type": "LONG"},
+      {"name": "price", "type": "DOUBLE"}
+    ]
+  },
+  "tasks": {
+    "columns": [
+      {"name": "task", "type": "STRING"},
+      {"name": "time", "type": "LONG"}
+    ]
+  }
+}
