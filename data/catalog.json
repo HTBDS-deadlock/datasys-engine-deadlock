@@ -1,15 +1,32 @@
 {
-  "trips": {
+  "tables": {
+    "name": "trips",
     "columns": [
-      {"name": "city", "type": "STRING"},
-      {"name": "distance", "type": "LONG"},
-      {"name": "price", "type": "DOUBLE"}
-    ]
-  },
-  "tasks": {
-    "columns": [
-      {"name": "task", "type": "STRING"},
-      {"name": "time", "type": "LONG"}
+      {
+        "name": "city",
+        "type": "STRING"
+      },
+      {
+        "name": "distance",
+        "type": "LONG"
+      },
+      {
+        "name": "price",
+        "type": "DOUBLE"
+      }
+    ],
+    "version": 2,
+    "partitions": [
+      {
+        "offset": 0,
+        "rowCount": 7,
+        "summaries": [
+          {
+            "min": "Aalborg",
+            "max": "Odense"
+          }
+        ]
+      }
     ]
   }
 }
