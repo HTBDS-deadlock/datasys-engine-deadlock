@@ -1,32 +1,35 @@
 {
-  "tables": {
-    "name": "trips",
-    "columns": [
-      {
-        "name": "city",
-        "type": "STRING"
-      },
-      {
-        "name": "distance",
-        "type": "LONG"
-      },
-      {
-        "name": "price",
-        "type": "DOUBLE"
-      }
-    ],
-    "version": 2,
-    "partitions": [
-      {
-        "offset": 0,
-        "rowCount": 7,
-        "summaries": [
-          {
-            "min": "Aalborg",
-            "max": "Odense"
+  "tables" : {
+    "trips" : {
+      "columns" : [ {
+        "name" : "city",
+        "type" : "STRING"
+      }, {
+        "name" : "distance",
+        "type" : "LONG"
+      }, {
+        "name" : "price",
+        "type" : "DOUBLE"
+      } ],
+      "dataFile" : "trips.bin",
+      "partitions" : [ {
+        "byteOffset" : 8,
+        "rowCount" : 8,
+        "stats" : {
+          "city" : {
+            "min" : "Aalborg",
+            "max" : "Roskilde"
+          },
+          "distance" : {
+            "min" : "12",
+            "max" : "299"
+          },
+          "price" : {
+            "min" : "23.5",
+            "max" : "450.25"
           }
-        ]
-      }
-    ]
+        }
+      } ]
+    }
   }
 }
