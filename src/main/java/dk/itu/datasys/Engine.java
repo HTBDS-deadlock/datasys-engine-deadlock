@@ -29,6 +29,8 @@ public final class Engine {
                 String printed = printer.print(st);
                 System.out.println(printed);
             }
+        } catch (Exception e) {
+            LOGGER.debug("Error Executing SQL ");
         } finally {
             LOGGER.debug("engine stopped");
         }
