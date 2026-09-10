@@ -24,23 +24,33 @@ public final class Engine {
         MDC.put("statementNumber", "0");
         MDC.put("sessionId", UUID.randomUUID().toString());
         LOGGER.debug("engine started");
+
         try {
-            // runGoldenDemo();
-            // String sql = "SELECT * from trips where distance > 100";
-            //String sql = "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE)";
-            String sql = "COPY trips FROM 'trips.csv'";
-            sqlLexer lexer = new sqlLexer(CharStreams.fromString(sql));
+            /*
+             * // runGoldenDemo();
+             * // String sql = "SELECT * from trips where distance > 100";
+             * String sql = "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE)";
+             * sqlLexer lexer = new sqlLexer(CharStreams.fromString(sql));
+             * 
+             * sqlParser parser = new sqlParser(new CommonTokenStream(lexer));
+             * // sqlParser.SelectContext tree = parser.select();
+             * sqlParser.CreateTableContext tree = parser.createTable();
+             * 
+             * SqlAstBuilder bulider = new SqlAstBuilder();
+             * // SelectStatement stmt = (SelectStatement) tree.accept(bulider);
+             * CreateTableStatement stmt = (CreateTableStatement) tree.accept(bulider);
+             */
+            String sql = """
+                    CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
+                    COPY trips FROM 'trips.csv';
+                    SELECT * FROM trips WHERE distance > 100;
+                    SELECT * FROM trips;              -- WHERE is optional, as in DuckDB
+                    """;
 
-            sqlParser parser = new sqlParser(new CommonTokenStream(lexer));
-            // sqlParser.SelectContext tree = parser.select();
-            //sqlParser.CreateTableContext tree = parser.createTable();
-            sqlParser.CopyContext tree = parser.copy();
-
-            SqlAstBuilder bulider = new SqlAstBuilder();
-            // SelectStatement stmt = (SelectStatement) tree.accept(bulider);
-            //CreateTableStatement stmt = (CreateTableStatement) tree.accept(bulider);
-            CopyStatement stmt = (CopyStatement) tree.accept(bulider);
-            System.err.println(stmt);
+            List<Statement> statements = new SqlParser().parse(sql);
+            for (Statement st : statements) {
+                System.err.println(st);
+            }
 
         } finally {
             LOGGER.debug("engine stopped");
