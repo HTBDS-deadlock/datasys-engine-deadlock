@@ -26,15 +26,17 @@ public final class Engine {
         LOGGER.debug("engine started");
         try {
             // runGoldenDemo();
-            String sql = "SELECT * from trips where distance > 100";
+            // String sql = "SELECT * from trips where distance > 100";
+            String sql = "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE)";
             sqlLexer lexer = new sqlLexer(CharStreams.fromString(sql));
 
             sqlParser parser = new sqlParser(new CommonTokenStream(lexer));
-            sqlParser.SelectContext tree = parser.select();
+            // sqlParser.SelectContext tree = parser.select();
+            sqlParser.CreateTableContext tree = parser.createTable();
 
             SqlAstBuilder bulider = new SqlAstBuilder();
-            SelectStatement stmt = (SelectStatement) tree.accept(bulider);
-
+            // SelectStatement stmt = (SelectStatement) tree.accept(bulider);
+            CreateTableStatement stmt = (CreateTableStatement) tree.accept(bulider);
             System.err.println(stmt);
 
         } finally {
