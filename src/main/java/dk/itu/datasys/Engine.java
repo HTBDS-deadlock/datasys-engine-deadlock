@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 
@@ -31,23 +32,29 @@ public final class Engine {
             for (Statement st : statements) {
                 String printed = printer.print(st);
                 System.out.println(printed);
+            }
+        } finally {
+            LOGGER.debug("engine stopped");
+        }
+    }
     /** Builds the golden trips table in the data directory and runs the three example queries. */
     private static void runGoldenDemo() {
-            //store it in data directory, which is the default data directory for the engine
-            Path dataDirectory = Path.of("data");
-            StorageEngine engine = new StorageEngine(dataDirectory);
+        //store it in data directory, which is the default data directory for the engine
+        Path dataDirectory = Path.of("data");
+        StorageEngine engine = new StorageEngine(dataDirectory);
 
-            List<ColumnSpec> columns = List.of(
-                    new ColumnSpec("city", ColumnType.STRING),
-                    new ColumnSpec("distance", ColumnType.LONG),
-                    new ColumnSpec("price", ColumnType.DOUBLE));
-            engine.createTable("trips", columns);
-            engine.copyFile("trips", Path.of("src", "test", "resources", "trips.csv").toString());
+        List<ColumnSpec> columns = List.of(
+                new ColumnSpec("city", ColumnType.STRING),
+                new ColumnSpec("distance", ColumnType.LONG),
+                new ColumnSpec("price", ColumnType.DOUBLE));
+        engine.createTable("trips", columns);
+        engine.copyFile("trips", Path.of("src", "test", "resources", "trips.csv").toString());
 
-            printResults(engine, "distance > 100", "trips", "distance", Comparison.GREATER_THAN, 100L);
-            printResults(engine, "city = Copenhagen", "trips", "city", Comparison.EQUALS, "Copenhagen");
-            printResults(engine, "price < 50.0", "trips", "price", Comparison.LESS_THAN, 50.0);
+        printResults(engine, "distance > 100", "trips", "distance", Comparison.GREATER_THAN, 100L);
+        printResults(engine, "city = Copenhagen", "trips", "city", Comparison.EQUALS, "Copenhagen");
+        printResults(engine, "price < 50.0", "trips", "price", Comparison.LESS_THAN, 50.0);
     }
+
 
     private static void printResults(StorageEngine engine, String label, String table, String column,
             Comparison comparison, Object constant) {
@@ -60,13 +67,13 @@ public final class Engine {
                 }
                 line.append(row[i]);
             }
-        } finally {
-            LOGGER.debug("engine stopped");
         }
     }
+
 
     String teamName() {
         return "Team Deadlock";
     }
+
 
 }

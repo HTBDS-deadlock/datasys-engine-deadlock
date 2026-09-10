@@ -474,6 +474,24 @@ public final class StorageEngine {
         };
     }
 
+    private static void validateFileHeader(RandomAccessFile raf) throws IOException {
+        byte[] magic = new byte[MAGIC.length];
+        raf.readFully(magic);
+
+        for (int i = 0; i < MAGIC.length; i++) {
+            if (magic[i] != MAGIC[i]) {
+                throw new IOException("Invalid file format: bad magic bytes");
+            }
+        }
+
+        int version = raf.readInt();
+        if (version != FORMAT_VERSION) {
+            throw new IOException(
+                    "Unsupported file format version: " + version +
+                            " (expected " + FORMAT_VERSION + ")");
+        }
+    }
+
     static void validateConstantType(ColumnType type, Object constant) {
         if (constant == null) {
             throw new IllegalArgumentException("constant must not be null");
