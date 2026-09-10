@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 
@@ -11,8 +12,8 @@ public final class Engine {
     //our logger, which we can use to log messages to the console and to a file
     private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
 
-    //the main method which is the entry point of the program and right now runs
-    // the golden demo as of exercise 2.5
+    //the main method which is the entry point of the program; parses and pretty-prints
+    // the four Task 1 statements (see Task 3: "mvn compile exec:java")
     public static void main(String[] args) {
         MDC.put("statementNumber", "0");
         MDC.put("sessionId", UUID.randomUUID().toString());
@@ -31,22 +32,30 @@ public final class Engine {
             for (Statement st : statements) {
                 String printed = printer.print(st);
                 System.out.println(printed);
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Error Executing SQL ");
+        } finally {
+            LOGGER.debug("engine stopped");
+        }
+    }
+
     /** Builds the golden trips table in the data directory and runs the three example queries. */
     private static void runGoldenDemo() {
-            //store it in data directory, which is the default data directory for the engine
-            Path dataDirectory = Path.of("data");
-            StorageEngine engine = new StorageEngine(dataDirectory);
+        //store it in data directory, which is the default data directory for the engine
+        Path dataDirectory = Path.of("data");
+        StorageEngine engine = new StorageEngine(dataDirectory);
 
-            List<ColumnSpec> columns = List.of(
-                    new ColumnSpec("city", ColumnType.STRING),
-                    new ColumnSpec("distance", ColumnType.LONG),
-                    new ColumnSpec("price", ColumnType.DOUBLE));
-            engine.createTable("trips", columns);
-            engine.copyFile("trips", Path.of("src", "test", "resources", "trips.csv").toString());
+        List<ColumnSpec> columns = List.of(
+                new ColumnSpec("city", ColumnType.STRING),
+                new ColumnSpec("distance", ColumnType.LONG),
+                new ColumnSpec("price", ColumnType.DOUBLE));
+        engine.createTable("trips", columns);
+        engine.copyFile("trips", Path.of("src", "test", "resources", "trips.csv").toString());
 
-            printResults(engine, "distance > 100", "trips", "distance", Comparison.GREATER_THAN, 100L);
-            printResults(engine, "city = Copenhagen", "trips", "city", Comparison.EQUALS, "Copenhagen");
-            printResults(engine, "price < 50.0", "trips", "price", Comparison.LESS_THAN, 50.0);
+        printResults(engine, "distance > 100", "trips", "distance", Comparison.GREATER_THAN, 100L);
+        printResults(engine, "city = Copenhagen", "trips", "city", Comparison.EQUALS, "Copenhagen");
+        printResults(engine, "price < 50.0", "trips", "price", Comparison.LESS_THAN, 50.0);
     }
 
     private static void printResults(StorageEngine engine, String label, String table, String column,
@@ -60,10 +69,7 @@ public final class Engine {
                 }
                 line.append(row[i]);
             }
-        } catch (Exception e) {
-            LOGGER.debug("Error Executing SQL ");
-        } finally {
-            LOGGER.debug("engine stopped");
+            System.out.println(line);
         }
     }
 
