@@ -1,5 +1,5 @@
 
-grammar Sql;
+grammar sql;
 
 options { caseInsensitive = true; }   // ANTLR ≥ 4.10
 

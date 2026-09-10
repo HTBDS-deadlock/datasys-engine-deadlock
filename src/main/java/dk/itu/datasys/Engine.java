@@ -7,9 +7,15 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 
+import org.antlr.v4.runtime.CharStream;
+import org.antlr.v4.runtime.CharStreams;
+import org.antlr.v4.runtime.CommonTokenStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+
+import dk.itu.datasys.sql.sqlLexer;
+import dk.itu.datasys.sql.sqlParser;
 
 public final class Engine {
     private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
@@ -19,13 +25,27 @@ public final class Engine {
         MDC.put("sessionId", UUID.randomUUID().toString());
         LOGGER.debug("engine started");
         try {
-            runGoldenDemo();
+            // runGoldenDemo();
+            String sql = "SELECT * from trips where distance > 100";
+            sqlLexer lexer = new sqlLexer(CharStreams.fromString(sql));
+
+            sqlParser parser = new sqlParser(new CommonTokenStream(lexer));
+            sqlParser.SelectContext tree = parser.select();
+
+            SqlAstBuilder bulider = new SqlAstBuilder();
+            SelectStatement stmt = (SelectStatement) tree.accept(bulider);
+
+            System.err.println(stmt);
+
         } finally {
             LOGGER.debug("engine stopped");
         }
     }
 
-    /** Builds the golden trips table in a fresh temp directory and runs the three example queries. */
+    /**
+     * Builds the golden trips table in a fresh temp directory and runs the three
+     * example queries.
+     */
     private static void runGoldenDemo() {
         try {
             Path dataDirectory = Files.createTempDirectory("engine-demo");
