@@ -24,7 +24,8 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Own-binary-format storage core: a JSON catalog (schema, data file, partitions,
+ * Own-binary-format storage core: a JSON catalog (schema, data file,
+ * partitions,
  * per-column min/max) plus one PAX-laid-out data file per table. See
  * docs/storage-design.md for the rationale behind each choice below.
  */
@@ -32,7 +33,7 @@ public final class StorageEngine {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(StorageEngine.class);
 
-    private static final byte[] MAGIC = {'P', 'A', 'X', '1'};
+    private static final byte[] MAGIC = { 'P', 'A', 'X', '1' };
     private static final int FORMAT_VERSION = 1;
     private static final int PAX_GROUP_SIZE = 8;
     private static final int DEFAULT_MAX_ROWS_PER_PARTITION = 65536;
@@ -109,7 +110,8 @@ public final class StorageEngine {
             throw new IllegalArgumentException("Unknown table: " + tableName);
         }
         if (schema.dataFile != null) {
-            throw new UnsupportedOperationException("Table already has data, appending is not supported yet: " + tableName);
+            throw new UnsupportedOperationException(
+                    "Table already has data, appending is not supported yet: " + tableName);
         }
 
         long start = System.currentTimeMillis();
@@ -250,8 +252,10 @@ public final class StorageEngine {
 
         lastScanStats = new ScanStats(partitionsTotal, partitionsRead, partitionsPruned);
         long durationMs = System.currentTimeMillis() - start;
-        LOGGER.debug("table={} column={} comparison={} const={} partitionsRead={} partitionsPruned={} rowsOut={} durationMs={}",
-                tableName, columnName, comparison, constant, partitionsRead, partitionsPruned, results.size(), durationMs);
+        LOGGER.debug(
+                "table={} column={} comparison={} const={} partitionsRead={} partitionsPruned={} rowsOut={} durationMs={}",
+                tableName, columnName, comparison, constant, partitionsRead, partitionsPruned, results.size(),
+                durationMs);
 
         return results;
     }
@@ -300,7 +304,7 @@ public final class StorageEngine {
         };
     }
 
-    private static void validateConstantType(ColumnType type, Object constant) {
+    static void validateConstantType(ColumnType type, Object constant) {
         if (constant == null) {
             throw new IllegalArgumentException("constant must not be null");
         }
@@ -313,6 +317,22 @@ public final class StorageEngine {
             throw new IllegalArgumentException("Constant type " + constant.getClass().getSimpleName()
                     + " does not match column type " + type);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // schema lookups
+    // ------------------------------------------------------------------
+
+    /**
+     * The table's schema, in column order. Throws IllegalArgumentException if
+     * unknown.
+     */
+    public List<ColumnSpec> schema(String tableName) {
+        TableSchema schema = tables.get(tableName);
+        if (schema == null) {
+            throw new IllegalArgumentException("Unknown table: " + tableName);
+        }
+        return List.copyOf(schema.columns);
     }
 
     // ------------------------------------------------------------------
