@@ -476,19 +476,46 @@ public final class StorageEngine {
     }
 
     /**
+     * Reads a single partition of a table by its index in the table's partition
+     * list, opening and closing the data file for just this read. Used by
+     * ScanOperator, which is handed partition numbers rather than internal
+     * PartitionInfo objects.
+     *
+     * @param tableName
+     * @param partitionNumber index into the table's partition list
+     * @return the rows in the partition, as Object[] arrays in schema column order
+     * @throws IllegalArgumentException if the table is unknown
+     * @throws UncheckedIOException     if an I/O error occurs while reading the
+     *                                  data file
+     */
+    public List<Object[]> readPartition(String tableName, int partitionNumber) {
+        TableSchema schema = tables.get(tableName);
+        if (schema == null) {
+            throw new IllegalArgumentException("Unknown table: " + tableName);
+        }
+        PartitionInfo partition = schema.partitions.get(partitionNumber);
+        try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "r")) {
+            validateFileHeader(raf);
+            return readPartition(raf, partition, schema.columns);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
      * Reads a partition of rows from the binary data file in PAX layout.
      * The method seeks to the byte offset of the partition,
      * reads the rows in groups of PAX_GROUP_SIZE, and returns a list of rows as
      * Object[] arrays
      * in schema column order.
-     * 
+     *
      * @param raf
      * @param partition
      * @param columns
      * @return
      * @throws IOException
      */
-    private List<Object[]> readPartition(RandomAccessFile raf, PartitionInfo partition, List<ColumnSpec> columns)
+    public List<Object[]> readPartition(RandomAccessFile raf, PartitionInfo partition, List<ColumnSpec> columns)
             throws IOException {
         // seeks to the byte offset of the partition in the random access file
         raf.seek(partition.byteOffset);
