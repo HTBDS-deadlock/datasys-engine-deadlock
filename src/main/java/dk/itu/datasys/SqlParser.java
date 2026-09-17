@@ -48,7 +48,7 @@ public final class SqlParser {
             return statements;
         } catch (SqlParseException e) {
             long durationMs = System.currentTimeMillis() - start;
-            LOGGER.debug("failed line={} col={} durationMs={}", e.line(), e.column(), durationMs);
+            LOGGER.error("failed line={} col={} durationMs={}", e.line(), e.column(), durationMs);
             throw e;
         }
     }

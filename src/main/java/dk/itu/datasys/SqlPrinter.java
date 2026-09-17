@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import java.math.BigDecimal;
 import java.util.stream.Collectors;
 
 public final class SqlPrinter {
@@ -46,6 +47,8 @@ public final class SqlPrinter {
     private String literal(Object constant) {
         if (constant instanceof String value) {
             return quote(value);
+        } else if (constant instanceof Double value) {
+            return BigDecimal.valueOf(value).toPlainString();
         }
         return constant.toString();
     }

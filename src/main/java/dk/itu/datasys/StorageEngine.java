@@ -101,6 +101,7 @@ public final class StorageEngine {
         try {
             Files.createDirectories(dataDirectory);
         } catch (IOException e) {
+            LOGGER.error("Error creating directories");
             throw new UncheckedIOException(e);
         }
         loadCatalog();
@@ -247,6 +248,7 @@ public final class StorageEngine {
                 partitions.add(writePartition(raf, schema.columns, batch, tableName, partitions.size()));
             }
         } catch (IOException e) {
+            LOGGER.error("Error copyFile");
             throw new UncheckedIOException(e);
         }
 
@@ -448,6 +450,7 @@ public final class StorageEngine {
                 // partitions and wraps
                 // it in an UncheckedIOException to propagate it as a runtime exception
             } catch (IOException e) {
+                LOGGER.error("Error during select");
                 throw new UncheckedIOException(e);
             }
         }
@@ -823,6 +826,8 @@ public final class StorageEngine {
                     case DOUBLE -> Double.parseDouble(raw);
                 };
             } catch (NumberFormatException e) {
+                LOGGER.error("Malformed value in file={} line={} column={} value={}",
+                        fileName, lineNumber, columns.get(i).name(), raw, e);
                 throw new IllegalArgumentException("Malformed value in file=" + fileName + " line=" + lineNumber
                         + " column=" + columns.get(i).name() + " value=" + raw, e);
             }
@@ -867,6 +872,7 @@ public final class StorageEngine {
                 tables.put(entry.getKey(), toSchema(entry.getValue()));
             }
         } catch (IOException e) {
+            LOGGER.error("Error loadCatalog mapper");
             throw new UncheckedIOException(e);
         }
     }
@@ -898,6 +904,7 @@ public final class StorageEngine {
         try {
             MAPPER.writeValue(catalogPath.toFile(), catalogFile);
         } catch (IOException e) {
+            LOGGER.error("Error writing/saving value to catalog");
             throw new UncheckedIOException(e);
         }
     }
