@@ -1,3 +1,8 @@
+# Commands 
+mvn test
+mvn exec:java
+
+
 # Storage Design
 Design decisions for the Exercise 2 storage core (StorageEngine, catalog, and binary
 data format). These decisions apply to createTable, copyFile, and select as

@@ -1,5 +1,7 @@
 package dk.itu.datasys;
 
-public record SelectStatement(String tableName, Predicate filters)
+import java.util.Optional;
+
+public record SelectStatement(String tableName, Optional<Predicate> filters)
         implements Statement {
 }
