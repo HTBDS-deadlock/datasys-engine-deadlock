@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import java.math.BigDecimal;
 import java.util.stream.Collectors;
 
 public final class SqlPrinter {
@@ -25,8 +26,8 @@ public final class SqlPrinter {
 
     private String printSelect(SelectStatement stmt) {
         String sql = "SELECT * FROM " + stmt.tableName();
-        if (stmt.filters() != null) {
-            sql += " WHERE " + printPredicate(stmt.filters());
+        if (stmt.filters().isPresent()) {
+            sql += " WHERE " + printPredicate(stmt.filters().get());
         }
         return sql + ";";
     }
@@ -46,6 +47,10 @@ public final class SqlPrinter {
     private String literal(Object constant) {
         if (constant instanceof String value) {
             return quote(value);
+        } else if (constant instanceof Double value) {
+            String bidDecimal = BigDecimal.valueOf(value).toPlainString();
+            return bidDecimal.contains(".") ? bidDecimal : bidDecimal + ".0";
+
         }
         return constant.toString();
     }

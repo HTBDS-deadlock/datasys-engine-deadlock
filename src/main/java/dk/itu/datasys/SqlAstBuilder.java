@@ -1,6 +1,7 @@
 package dk.itu.datasys;
 
 import java.util.List;
+import java.util.Optional;
 
 import dk.itu.datasys.sql.sqlBaseVisitor;
 import dk.itu.datasys.sql.sqlParser;
@@ -26,9 +27,9 @@ public class SqlAstBuilder extends sqlBaseVisitor<Statement> {
     public Statement visitSelect(sqlParser.SelectContext ctx) {
         // SelectContext : SELECT, FROM, IDENTIFIER, WHERE etc.
         String tableName = ctx.IDENTIFIER().getText();
-        Predicate filters = ctx.predicate() != null
-                ? buildPredicate(ctx.predicate())
-                : null;
+        Optional<Predicate> filters = ctx.predicate() != null
+                ? Optional.of(buildPredicate(ctx.predicate()))
+                : Optional.empty();
         return new SelectStatement(tableName, filters);
     }
 

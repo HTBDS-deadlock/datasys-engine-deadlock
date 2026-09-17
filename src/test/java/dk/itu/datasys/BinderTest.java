@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,8 +28,8 @@ class BinderTest {
 
                 assertDoesNotThrow(() -> binder.bind(new CopyStatement("trips", "trips.csv")));
                 assertDoesNotThrow(() -> binder.bind(new SelectStatement("trips",
-                                new Predicate("distance", Comparison.GREATER_THAN, 100L))));
-                assertDoesNotThrow(() -> binder.bind(new SelectStatement("trips", null)));
+                                Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)))));
+                assertDoesNotThrow(() -> binder.bind(new SelectStatement("trips", Optional.empty())));
                 assertDoesNotThrow(() -> binder.bind(new CreateTableStatement("other",
                                 List.of(new ColumnSpec("x", ColumnType.LONG)))));
         }
@@ -37,7 +38,7 @@ class BinderTest {
         void rejectsUnknownTableInSelect() {
                 Binder binder = new Binder(engineWithTripsTable());
                 assertThrows(IllegalArgumentException.class,
-                                () -> binder.bind(new SelectStatement("ghost", null)));
+                                () -> binder.bind(new SelectStatement("ghost", Optional.empty())));
         }
 
         @Test
@@ -52,7 +53,7 @@ class BinderTest {
                 Binder binder = new Binder(engineWithTripsTable());
                 assertThrows(IllegalArgumentException.class,
                                 () -> binder.bind(new SelectStatement("trips",
-                                                new Predicate("ghost_column", Comparison.EQUALS, "x"))));
+                                                Optional.of(new Predicate("ghost_column", Comparison.EQUALS, "x")))));
         }
 
         @Test
@@ -60,7 +61,8 @@ class BinderTest {
                 Binder binder = new Binder(engineWithTripsTable());
                 assertThrows(IllegalArgumentException.class,
                                 () -> binder.bind(new SelectStatement("trips",
-                                                new Predicate("distance", Comparison.GREATER_THAN, "not-a-long"))));
+                                                Optional.of(new Predicate("distance", Comparison.GREATER_THAN,
+                                                                "not-a-long")))));
         }
 
         @Test

@@ -2,10 +2,11 @@ package dk.itu.datasys;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
@@ -27,10 +28,10 @@ class SqlParserSmokeTest {
 
         SelectStatement withPredicate = (SelectStatement) statements.get(2);
         assertEquals("trips", withPredicate.tableName());
-        assertEquals(new Predicate("distance", Comparison.GREATER_THAN, 100L), withPredicate.filters());
+        assertEquals(Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)), withPredicate.filters());
 
         SelectStatement withoutPredicate = (SelectStatement) statements.get(3);
-        assertNull(withoutPredicate.filters());
+        assertTrue(withoutPredicate.filters().isEmpty());
     }
 
     @Test
@@ -58,7 +59,7 @@ class SqlParserSmokeTest {
     }
 
     private Object filterConstant(Statement statement) {
-        return ((SelectStatement) statement).filters().constant();
+        return ((SelectStatement) statement).filters().orElseThrow().constant();
     }
 
     @Test
