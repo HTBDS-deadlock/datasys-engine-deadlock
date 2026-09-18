@@ -8,11 +8,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import dk.itu.datasys.LogService.Builder.LogServiceTimeFormat;
+
 public final class Engine {
-    //our logger, which we can use to log messages to the console and to a file
+    // our logger, which we can use to log messages to the console and to a file
     private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
 
-    //the main method which is the entry point of the program; parses and pretty-prints
+    // the main method which is the entry point of the program; parses and
+    // pretty-prints
     // the four Task 1 statements (see Task 3: "mvn compile exec:java")
     public static void main(String[] args) {
         MDC.put("statementNumber", "0");
@@ -34,15 +37,24 @@ public final class Engine {
                 System.out.println(printed);
             }
         } catch (Exception e) {
-            LOGGER.debug("Error Executing SQL ");
+            LogService logService = LogService.builder()
+                    .logId(1)
+                    .LogServiceReportTime()
+                    .message(String.format("Error Executing SQL", 11))
+                    .build();
+            LOGGER.debug(logService.toString());
         } finally {
             LOGGER.debug("engine stopped");
         }
     }
 
-    /** Builds the golden trips table in the data directory and runs the three example queries. */
+    /**
+     * Builds the golden trips table in the data directory and runs the three
+     * example queries.
+     */
     private static void runGoldenDemo() {
-        //store it in data directory, which is the default data directory for the engine
+        // store it in data directory, which is the default data directory for the
+        // engine
         Path dataDirectory = Path.of("data");
         StorageEngine engine = new StorageEngine(dataDirectory);
 
