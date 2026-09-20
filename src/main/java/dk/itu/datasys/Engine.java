@@ -8,8 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
-import dk.itu.datasys.LogService.Builder.LogServiceTimeFormat;
-
 public final class Engine {
     // our logger, which we can use to log messages to the console and to a file
     private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
