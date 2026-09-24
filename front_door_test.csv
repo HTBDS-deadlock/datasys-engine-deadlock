@@ -1,0 +1,25 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] -----------------------< dk.itu.datasys:engine >------------------------
+[INFO] Building engine 0.1.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- antlr4:4.13.2:antlr4 (default) @ engine ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory C:\ITU\Semester03\datasys-engine-deadlock\src\main\antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ engine ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ engine ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- exec:3.6.3:java (default-cli) @ engine ---
+Odense,95,120.75
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  1.025 s
+[INFO] Finished at: 2026-09-24T11:31:46+02:00
+[INFO] ------------------------------------------------------------------------

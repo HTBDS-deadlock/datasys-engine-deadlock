@@ -45,6 +45,10 @@ public final class Engine {
             }
 
             run(sqlText);
+        } catch (RuntimeException e) {
+            // keeps stdout clean: the failure's message goes to stderr, never
+            // a raw stack trace mixed into the CSV output
+            System.err.println(e.getMessage());
         } finally {
             LOGGER.debug("engine stopped");
         }
