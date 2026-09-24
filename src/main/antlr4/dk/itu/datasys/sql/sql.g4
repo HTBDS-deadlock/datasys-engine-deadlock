@@ -12,7 +12,10 @@ columnType   : STRING | LONG | DOUBLE ;
 
 copy         : COPY IDENTIFIER FROM STRING_LITERAL ;
 
-select       : SELECT '*' FROM IDENTIFIER (WHERE predicate)? ;
+select       : SELECT selectList FROM IDENTIFIER (WHERE predicate)? ;
+selectList   : '*'                          # allColumns
+             | IDENTIFIER (',' IDENTIFIER)* # columnList
+             ;
 predicate    : IDENTIFIER comparison=('=' | '<' | '>') literal ;
 literal      : STRING_LITERAL | LONG_LITERAL | DOUBLE_LITERAL ;
 

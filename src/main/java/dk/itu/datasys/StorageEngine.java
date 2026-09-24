@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -109,14 +110,13 @@ public final class StorageEngine {
 
     /**
      * ensureSession() makes sure that a session ID exists for logging. If there
-     * isnt one it
-     * creates a random ID. It also resets the statement number to 0.
+     * isnt one it creates a random ID. statementNumber is not touched here --
+     * the executor owns that counter (see Executor.run).
      */
     private static void ensureSession() {
         if (MDC.get("sessionId") == null) {
             MDC.put("sessionId", UUID.randomUUID().toString());
         }
-        MDC.put("statementNumber", "0");
     }
 
     // ------------------------------------------------------------------
@@ -358,113 +358,27 @@ public final class StorageEngine {
      */
     public List<Object[]> select(String tableName, String columnName, Comparison comparison, Object constant) {
         ensureSession();
-        // gets the schema of the specified table, and throws an exception if the table
-        // does not exist
-        TableSchema schema = tables.get(tableName);
-        if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
-        }
-        // sets index to -1 and the columnSpec to null because we havent found them yet
-        int columnIndex = -1;
-        ColumnSpec columnSpec = null;
-        // iterates through the columns in the schema to find the index and spec of the
-        // specified column
-        for (int i = 0; i < schema.columns.size(); i++) {
-            if (schema.columns.get(i).name().equals(columnName)) {
-                columnIndex = i;
-                columnSpec = schema.columns.get(i);
-                break;
-            }
-        }
-        // throws an exception if the specified column does not exist in the table
-        if (columnSpec == null) {
-            throw new IllegalArgumentException("Unknown column: " + columnName);
-        }
-        // validates that the type of the constant matches the type of the specified
-        // column
-        validateConstantType(columnSpec.type(), constant);
+        // Binds the equivalent SELECT ... WHERE statement against the catalog: checks
+        // the table exists, the column exists, and the constant's type matches the
+        // column's type (same checks and error messages as before the planner
+        // refactor).
+        SelectStatement statement = new SelectStatement(tableName, Optional.empty(),
+                Optional.of(new Predicate(columnName, comparison, constant)));
+        new Binder(this).bind(statement);
 
-        // starts a timer to measure the duration of the select operation,
-        // initializes an empty list for the results,
-        // and initializes counters for the total number of partitions,
-        // the number of partitions read,
-        // and the number of partitions pruned
+        // Plans the statement (this is where partition pruning now happens, see
+        // Planner) and drains the resulting operator pipeline into a row list.
         long start = System.currentTimeMillis();
-        List<Object[]> results = new ArrayList<>();
-        int partitionsTotal = schema.partitions.size();
-        int partitionsRead = 0;
-        int partitionsPruned = 0;
+        Plan plan = new Planner(this).plan(statement);
+        // Plan: which tree, what to read, which algorithm, which order, how much
+        List<Object[]> results = Operator.drain(plan.root());
+        lastScanStats = plan.stats();
 
-        // if the table has a data file, opens the data file for reading and iterates
-        // through the partitions
-        // mode is set to "r" for read-only access, and the data file is resolved using
-        // the data directory and the data file name from the schema
-        if (schema.dataFile != null) {
-            try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "r")) {
-                // first validates the file header to ensure that the data file is in the
-                // expected format and version using the validateFileHeader method
-                validateFileHeader(raf);
-                // Iterates through the partitions in the schema, retrieves the min and max
-                // values
-                // for the specified column from the partition's statistics,
-                // and checks if the partition can be pruned based on the comparison and
-                // constant.
-                for (int p = 0; p < schema.partitions.size(); p++) {
-                    // retrieves the partition information for the current partition index
-                    PartitionInfo partition = schema.partitions.get(p);
-                    // retrieves the min and max values for the specified column from the
-                    // partition's statistics
-                    Object[] columnMinMax = partition.stats.get(columnName);
-                    // checks if the partition can be pruned based on the comparison and constant
-                    // using the canPrune method
-                    // which compares the constant with the min and max values of the column in the
-                    // partition
-                    boolean prune = canPrune(comparison, constant, columnMinMax[0], columnMinMax[1]);
-                    // logs the decision to prune or read the partition, along with relevant
-                    // information such as table name, column name, comparison, constant, partition
-                    // index, min and max values
-                    LOGGER.debug("table={} column={} comparison={} const={} partition={} min={} max={} decision={}",
-                            tableName, columnName, comparison, constant, p, columnMinMax[0], columnMinMax[1],
-                            prune ? "PRUNED" : "READ");
-                    // checks if the partition is pruned, increments the partitionsPruned counter
-                    // and continues to the next partition if true
-                    if (prune) {
-                        partitionsPruned++;
-                        continue;
-                    }
-                    // if the partition is not pruned, increments the partitionsRead counter and
-                    // reads the partition using the readPartition method
-                    // which returns a list of rows in the partition. It then iterates through the
-                    // rows and
-                    // checks if each row matches the comparison with the constant using the matches
-                    // method.
-                    // If a row matches the condition, it is added to the results list.
-                    partitionsRead++;
-                    for (Object[] row : readPartition(raf, partition, schema.columns)) {
-                        if (matches(row[columnIndex], comparison, constant)) {
-                            results.add(row);
-                        }
-                    }
-                }
-                // catches any IOException that occurs during the reading of the data file or
-                // partitions and wraps
-                // it in an UncheckedIOException to propagate it as a runtime exception
-            } catch (IOException e) {
-                LOGGER.error("Error during select");
-                throw new UncheckedIOException(e);
-            }
-        }
-        // updates the lastScanStats with the total number of partitions, partitions
-        // read, and partitions pruned
-        // lastScanStats is an instance of the ScanStats class, which is used to store
-        // statistics about the
-        // last select operation performed on the storage engine
-        lastScanStats = new ScanStats(partitionsTotal, partitionsRead, partitionsPruned);
         long durationMs = System.currentTimeMillis() - start;
         LOGGER.debug(
                 "table={} column={} comparison={} const={} partitionsRead={} partitionsPruned={} rowsOut={} durationMs={}",
-                tableName, columnName, comparison, constant, partitionsRead, partitionsPruned, results.size(),
-                durationMs);
+                tableName, columnName, comparison, constant, plan.stats().partitionsRead(),
+                plan.stats().partitionsPruned(), results.size(), durationMs);
 
         return results;
     }
@@ -476,19 +390,46 @@ public final class StorageEngine {
     }
 
     /**
+     * Reads a single partition of a table by its index in the table's partition
+     * list, opening and closing the data file for just this read. Used by
+     * ScanOperator, which is handed partition numbers rather than internal
+     * PartitionInfo objects.
+     *
+     * @param tableName
+     * @param partitionNumber index into the table's partition list
+     * @return the rows in the partition, as Object[] arrays in schema column order
+     * @throws IllegalArgumentException if the table is unknown
+     * @throws UncheckedIOException     if an I/O error occurs while reading the
+     *                                  data file
+     */
+    public List<Object[]> readPartition(String tableName, int partitionNumber) {
+        TableSchema schema = tables.get(tableName);
+        if (schema == null) {
+            throw new IllegalArgumentException("Unknown table: " + tableName);
+        }
+        PartitionInfo partition = schema.partitions.get(partitionNumber);
+        try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "r")) {
+            validateFileHeader(raf);
+            return readPartition(raf, partition, schema.columns);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
      * Reads a partition of rows from the binary data file in PAX layout.
      * The method seeks to the byte offset of the partition,
      * reads the rows in groups of PAX_GROUP_SIZE, and returns a list of rows as
      * Object[] arrays
      * in schema column order.
-     * 
+     *
      * @param raf
      * @param partition
      * @param columns
      * @return
      * @throws IOException
      */
-    private List<Object[]> readPartition(RandomAccessFile raf, PartitionInfo partition, List<ColumnSpec> columns)
+    public List<Object[]> readPartition(RandomAccessFile raf, PartitionInfo partition, List<ColumnSpec> columns)
             throws IOException {
         // seeks to the byte offset of the partition in the random access file
         raf.seek(partition.byteOffset);
@@ -620,6 +561,32 @@ public final class StorageEngine {
             throw new IllegalArgumentException("Unknown table: " + tableName);
         }
         return List.copyOf(schema.columns);
+    }
+
+    /** The table's partition count. Throws IllegalArgumentException if unknown. */
+    public int partitionCount(String tableName) {
+        TableSchema schema = tables.get(tableName);
+        if (schema == null) {
+            throw new IllegalArgumentException("Unknown table: " + tableName);
+        }
+        return schema.partitions.size();
+    }
+
+    /**
+     * The min/max summary of columnName in each of the table's partitions, as
+     * {min, max} pairs indexed by partition number. Used by the planner to decide
+     * which partitions can be pruned without opening the data file.
+     */
+    public List<Object[]> columnStats(String tableName, String columnName) {
+        TableSchema schema = tables.get(tableName);
+        if (schema == null) {
+            throw new IllegalArgumentException("Unknown table: " + tableName);
+        }
+        List<Object[]> stats = new ArrayList<>(schema.partitions.size());
+        for (PartitionInfo partition : schema.partitions) {
+            stats.add(partition.stats.get(columnName));
+        }
+        return stats;
     }
 
     // ------------------------------------------------------------------

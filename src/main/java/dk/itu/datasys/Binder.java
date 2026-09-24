@@ -2,7 +2,6 @@ package dk.itu.datasys;
 
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 // Binder is a verifier that checks if our SQL statements are actually possible accordingly to our 
@@ -44,16 +43,23 @@ public final class Binder {
 
     private void bindSelect(SelectStatement stmt) {
         List<ColumnSpec> schema = engine.schema(stmt.tableName());
-        Optional<Predicate> filters = stmt.filters();
-        if (filters.isEmpty()) {
-            return;
-        }
 
-        Predicate predicate = filters.get();
-        ColumnSpec column = schema.stream()
-                .filter(c -> c.name().equals(predicate.columnName()))
+        stmt.columns().ifPresent(columns -> {
+            for (String columnName : columns) {
+                findColumn(schema, columnName);
+            }
+        });
+
+        stmt.filters().ifPresent(predicate -> {
+            ColumnSpec column = findColumn(schema, predicate.columnName());
+            StorageEngine.validateConstantType(column.type(), predicate.constant());
+        });
+    }
+
+    private ColumnSpec findColumn(List<ColumnSpec> schema, String columnName) {
+        return schema.stream()
+                .filter(c -> c.name().equals(columnName))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Unknown column: " + predicate.columnName()));
-        StorageEngine.validateConstantType(column.type(), predicate.constant());
+                .orElseThrow(() -> new IllegalArgumentException("Unknown column: " + columnName));
     }
 }

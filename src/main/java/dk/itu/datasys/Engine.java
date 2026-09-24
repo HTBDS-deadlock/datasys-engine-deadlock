@@ -1,76 +1,89 @@
 package dk.itu.datasys;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 public final class Engine {
-    //our logger, which we can use to log messages to the console and to a file
+    // our logger, which we can use to log messages to the console and to a file
     private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
 
-    //the main method which is the entry point of the program; parses and pretty-prints
-    // the four Task 1 statements (see Task 3: "mvn compile exec:java")
+    // the main method which is the entry point of the program; the SQL front
+    // door. No arguments: usage. One argument: that argument is the SQL text to
+    // run. "-f <path>" (two arguments): run the whole script at that path. Each
+    // SELECT's rows go to stdout as headerless CSV; nothing else touches stdout.
     public static void main(String[] args) {
         MDC.put("statementNumber", "0");
         MDC.put("sessionId", UUID.randomUUID().toString());
         LOGGER.debug("engine started");
 
         try {
-            String sql = """
-                    CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
-                    COPY trips FROM 'trips.csv';
-                    SELECT * FROM trips WHERE distance > 100;
-                    SELECT * FROM trips;              -- WHERE is optional, as in DuckDB
-                    """;
-
-            SqlPrinter printer = new SqlPrinter();
-            List<Statement> statements = new SqlParser().parse(sql);
-            for (Statement st : statements) {
-                String printed = printer.print(st);
-                System.out.println(printed);
+            String sqlText;
+            if (args.length == 1) { // Single SQL input
+                // May omit its trailing ';' (the exercise's own quoting examples
+                // do), unlike a script file, where every statement already ends
+                // with one.
+                sqlText = args[0].strip();
+                if (!sqlText.endsWith(";")) {
+                    sqlText += ";";
+                }
+            } else if (args.length == 2 && args[0].equals("-f")) {
+                // SQL input with a file as argument 2.
+                sqlText = readScript(args[1]);
+            } else {
+                printUsage(); // No arguments. Print team name etc.
+                return;
             }
-        } catch (Exception e) {
-            LOGGER.debug("Error Executing SQL ");
+
+            run(sqlText);
+        } catch (RuntimeException e) {
+            // keeps stdout clean: the failure's message goes to stderr, never
+            // a raw stack trace mixed into the CSV output
+            System.err.println(e.getMessage());
         } finally {
             LOGGER.debug("engine stopped");
         }
     }
 
-    /** Builds the golden trips table in the data directory and runs the three example queries. */
-    private static void runGoldenDemo() {
-        //store it in data directory, which is the default data directory for the engine
-        Path dataDirectory = Path.of("data");
-        StorageEngine engine = new StorageEngine(dataDirectory);
+    private static void run(String sqlText) {
+        StorageEngine engine = new StorageEngine(Path.of("data"));
+        Executor executor = new Executor(engine);
 
-        List<ColumnSpec> columns = List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("distance", ColumnType.LONG),
-                new ColumnSpec("price", ColumnType.DOUBLE));
-        engine.createTable("trips", columns);
-        engine.copyFile("trips", Path.of("src", "test", "resources", "trips.csv").toString());
-
-        printResults(engine, "distance > 100", "trips", "distance", Comparison.GREATER_THAN, 100L);
-        printResults(engine, "city = Copenhagen", "trips", "city", Comparison.EQUALS, "Copenhagen");
-        printResults(engine, "price < 50.0", "trips", "price", Comparison.LESS_THAN, 50.0);
+        for (ExecutionResult result : executor.run(sqlText)) {
+            result.rows().ifPresent(Engine::printCsv);
+        }
     }
 
-    private static void printResults(StorageEngine engine, String label, String table, String column,
-            Comparison comparison, Object constant) {
-        System.out.println(label + ":");
-        for (Object[] row : engine.select(table, column, comparison, constant)) {
-            StringBuilder line = new StringBuilder("  ");
-            for (int i = 0; i < row.length; i++) {
-                if (i > 0) {
-                    line.append(" | ");
-                }
-                line.append(row[i]);
-            }
-            System.out.println(line);
+    private static String readScript(String path) {
+        try {
+            return Files.readString(Path.of(path));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
+    }
+
+    private static void printCsv(List<Object[]> rows) {
+        for (Object[] row : rows) {
+            System.out.println(Arrays.stream(row)
+                    .map(String::valueOf)
+                    .collect(Collectors.joining(",")));
+        }
+    }
+
+    private static void printUsage() {
+        System.out.println(new Engine().teamName());
+        System.out.println("Usage:");
+        System.out.println("  mvn -q compile exec:java -Dexec.args=\"'<sql statement>'\"");
+        System.out.println("  mvn -q compile exec:java -Dexec.args=\"-f <path-to-script.sql>\"");
     }
 
     String teamName() {
