@@ -4,8 +4,10 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,65 +17,66 @@ public final class Engine {
     // our logger, which we can use to log messages to the console and to a file
     private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
 
-    // the main method which is the entry point of the program; the SQL front door:
-    // takes either a single SQL statement or a path to a script file as its one
-    // argument, runs it through the executor, and prints each statement's
-    // pretty-printed form followed by its rows (if it was a SELECT).
+    // the main method which is the entry point of the program; the SQL front
+    // door. No arguments: usage. One argument: that argument is the SQL text to
+    // run. "-f <path>" (two arguments): run the whole script at that path. Each
+    // SELECT's rows go to stdout as headerless CSV; nothing else touches stdout.
     public static void main(String[] args) {
         MDC.put("statementNumber", "0");
         MDC.put("sessionId", UUID.randomUUID().toString());
         LOGGER.debug("engine started");
 
         try {
-            if (args.length != 1) {
-                printUsage();
+            String sqlText;
+            if (args.length == 1) { // Single SQL input
+                sqlText = args[0];
+            } else if (args.length == 2 && args[0].equals("-f")) {
+                // SQL input with a file as argument 2.
+                sqlText = readScript(args[1]);
+            } else {
+                printUsage(); // No arguments. Print team name etc.
                 return;
             }
 
-            String sqlText = readSqlArgument(args[0]);
-            StorageEngine engine = new StorageEngine(Path.of("data"));
-            Executor executor = new Executor(engine);
-            SqlPrinter printer = new SqlPrinter();
-
-            for (ExecutionResult result : executor.run(sqlText)) {
-                System.out.println(printer.print(result.statement()));
-                result.rows().ifPresent(Engine::printRows);
-            }
+            run(sqlText);
         } finally {
             LOGGER.debug("engine stopped");
         }
     }
 
-    // reads the SQL text to run: the argument itself if it isn't an existing
-    // file, or that file's contents if it is (so the same argument slot covers
-    // both a single inline statement/script and a path to a script file)
-    private static String readSqlArgument(String arg) {
-        Path path = Path.of(arg);
-        if (Files.isRegularFile(path)) {
-            try {
-                return Files.readString(path);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
+    private static void run(String sqlText) {
+        StorageEngine engine = new StorageEngine(Path.of("data"));
+        Executor executor = new Executor(engine);
+        SqlPrinter printer = new SqlPrinter();
+
+        for (ExecutionResult result : executor.run(sqlText)) {
+            // console log only (stderr, see log4j2.xml) -- keeps stdout free for CSV rows
+            LOGGER.debug("executing statement={}", printer.print(result.statement()));
+            result.rows().ifPresent(Engine::printCsv);
         }
-        return arg;
     }
 
-    private static void printRows(List<Object[]> rows) {
+    private static String readScript(String path) {
+        try {
+            return Files.readString(Path.of(path));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static void printCsv(List<Object[]> rows) {
         for (Object[] row : rows) {
-            StringBuilder line = new StringBuilder("  ");
-            for (int i = 0; i < row.length; i++) {
-                if (i > 0) {
-                    line.append(" | ");
-                }
-                line.append(row[i]);
-            }
-            System.out.println(line);
+            System.out.println(Arrays.stream(row)
+                    .map(String::valueOf)
+                    .collect(Collectors.joining(",")));
         }
     }
 
     private static void printUsage() {
-        System.out.println("Usage: mvn compile exec:java -Dexec.args=\"<sql-statement-or-path-to-script-file>\"");
+        System.out.println(new Engine().teamName());
+        System.out.println("Usage:");
+        System.out.println("  mvn -q compile exec:java -Dexec.args=\"'<sql statement>'\"");
+        System.out.println("  mvn -q compile exec:java -Dexec.args=\"-f <path-to-script.sql>\"");
     }
 
     String teamName() {
