@@ -3,6 +3,8 @@ package dk.itu.datasys;
 import java.util.List;
 import java.util.Optional;
 
+import org.antlr.v4.runtime.tree.TerminalNode;
+
 import dk.itu.datasys.sql.sqlBaseVisitor;
 import dk.itu.datasys.sql.sqlParser;
 
@@ -27,10 +29,20 @@ public class SqlAstBuilder extends sqlBaseVisitor<Statement> {
     public Statement visitSelect(sqlParser.SelectContext ctx) {
         // SelectContext : SELECT, FROM, IDENTIFIER, WHERE etc.
         String tableName = ctx.IDENTIFIER().getText();
+        Optional<List<String>> columns = buildColumnList(ctx.selectList());
         Optional<Predicate> filters = ctx.predicate() != null
                 ? Optional.of(buildPredicate(ctx.predicate()))
                 : Optional.empty();
-        return new SelectStatement(tableName, filters);
+        return new SelectStatement(tableName, columns, filters);
+    }
+
+    private Optional<List<String>> buildColumnList(sqlParser.SelectListContext ctx) {
+        if (ctx instanceof sqlParser.ColumnListContext columnList) {
+            return Optional.of(columnList.IDENTIFIER().stream()
+                    .map(TerminalNode::getText)
+                    .toList());
+        }
+        return Optional.empty();
     }
 
     private Predicate buildPredicate(sqlParser.PredicateContext ctx) {

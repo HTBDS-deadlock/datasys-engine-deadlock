@@ -28,10 +28,22 @@ class SqlParserSmokeTest {
 
         SelectStatement withPredicate = (SelectStatement) statements.get(2);
         assertEquals("trips", withPredicate.tableName());
+        assertTrue(withPredicate.columns().isEmpty());
         assertEquals(Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)), withPredicate.filters());
 
         SelectStatement withoutPredicate = (SelectStatement) statements.get(3);
+        assertTrue(withoutPredicate.columns().isEmpty());
         assertTrue(withoutPredicate.filters().isEmpty());
+    }
+
+    @Test
+    void parsesColumnListInSelect() {
+        List<Statement> statements = new SqlParser().parse("SELECT city, price FROM trips WHERE distance > 100;");
+
+        SelectStatement select = (SelectStatement) statements.get(0);
+        assertEquals("trips", select.tableName());
+        assertEquals(Optional.of(List.of("city", "price")), select.columns());
+        assertEquals(Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)), select.filters());
     }
 
     @Test

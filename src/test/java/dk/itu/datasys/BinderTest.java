@@ -27,9 +27,11 @@ class BinderTest {
                 Binder binder = new Binder(engineWithTripsTable());
 
                 assertDoesNotThrow(() -> binder.bind(new CopyStatement("trips", "trips.csv")));
-                assertDoesNotThrow(() -> binder.bind(new SelectStatement("trips",
+                assertDoesNotThrow(() -> binder.bind(new SelectStatement("trips", Optional.empty(),
                                 Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)))));
-                assertDoesNotThrow(() -> binder.bind(new SelectStatement("trips", Optional.empty())));
+                assertDoesNotThrow(() -> binder.bind(new SelectStatement("trips", Optional.empty(), Optional.empty())));
+                assertDoesNotThrow(() -> binder.bind(new SelectStatement("trips", Optional.of(List.of("city")),
+                                Optional.empty())));
                 assertDoesNotThrow(() -> binder.bind(new CreateTableStatement("other",
                                 List.of(new ColumnSpec("x", ColumnType.LONG)))));
         }
@@ -38,7 +40,7 @@ class BinderTest {
         void rejectsUnknownTableInSelect() {
                 Binder binder = new Binder(engineWithTripsTable());
                 assertThrows(IllegalArgumentException.class,
-                                () -> binder.bind(new SelectStatement("ghost", Optional.empty())));
+                                () -> binder.bind(new SelectStatement("ghost", Optional.empty(), Optional.empty())));
         }
 
         @Test
@@ -52,15 +54,23 @@ class BinderTest {
         void rejectsUnknownColumnInWhere() {
                 Binder binder = new Binder(engineWithTripsTable());
                 assertThrows(IllegalArgumentException.class,
-                                () -> binder.bind(new SelectStatement("trips",
+                                () -> binder.bind(new SelectStatement("trips", Optional.empty(),
                                                 Optional.of(new Predicate("ghost_column", Comparison.EQUALS, "x")))));
+        }
+
+        @Test
+        void rejectsUnknownColumnInColumnList() {
+                Binder binder = new Binder(engineWithTripsTable());
+                assertThrows(IllegalArgumentException.class,
+                                () -> binder.bind(new SelectStatement("trips", Optional.of(List.of("ghost_column")),
+                                                Optional.empty())));
         }
 
         @Test
         void rejectsWrongConstantTypeInWhere() {
                 Binder binder = new Binder(engineWithTripsTable());
                 assertThrows(IllegalArgumentException.class,
-                                () -> binder.bind(new SelectStatement("trips",
+                                () -> binder.bind(new SelectStatement("trips", Optional.empty(),
                                                 Optional.of(new Predicate("distance", Comparison.GREATER_THAN,
                                                                 "not-a-long")))));
         }

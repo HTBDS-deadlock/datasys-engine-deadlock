@@ -362,7 +362,7 @@ public final class StorageEngine {
         // the table exists, the column exists, and the constant's type matches the
         // column's type (same checks and error messages as before the planner
         // refactor).
-        SelectStatement statement = new SelectStatement(tableName,
+        SelectStatement statement = new SelectStatement(tableName, Optional.empty(),
                 Optional.of(new Predicate(columnName, comparison, constant)));
         new Binder(this).bind(statement);
 

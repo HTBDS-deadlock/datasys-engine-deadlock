@@ -69,6 +69,32 @@ class OperatorTest {
         filter.close();
     }
 
+    @Test
+    void projectOperatorNarrowsAndReordersColumns() {
+        StorageEngine engine = engineWithTripsTable();
+        ScanOperator scan = new ScanOperator(engine, "trips", List.of(0, 1, 2, 3));
+        ProjectOperator project = new ProjectOperator(scan, engine.schema("trips"), List.of("price", "city"));
+
+        project.open();
+        List<Object[]> rows = drain(project);
+        project.close();
+
+        assertEquals(8, rows.size());
+        assertArrayEquals(new Object[] { 23.5, "Copenhagen" }, rows.get(0));
+        assertArrayEquals(new Object[] { 450.25, "Esbjerg" }, rows.get(7));
+    }
+
+    @Test
+    void projectOperatorReturnsNullWhenChildIsExhausted() {
+        StorageEngine engine = engineWithTripsTable();
+        ScanOperator scan = new ScanOperator(engine, "trips", List.of());
+        ProjectOperator project = new ProjectOperator(scan, engine.schema("trips"), List.of("city"));
+
+        project.open();
+        assertNull(project.next());
+        project.close();
+    }
+
     private List<Object[]> drain(Operator operator) {
         List<Object[]> rows = new ArrayList<>();
         Object[] row;

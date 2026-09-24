@@ -25,7 +25,10 @@ public final class SqlPrinter {
     }
 
     private String printSelect(SelectStatement stmt) {
-        String sql = "SELECT * FROM " + stmt.tableName();
+        String columns = stmt.columns()
+                .map(names -> String.join(", ", names))
+                .orElse("*");
+        String sql = "SELECT " + columns + " FROM " + stmt.tableName();
         if (stmt.filters().isPresent()) {
             sql += " WHERE " + printPredicate(stmt.filters().get());
         }
