@@ -16,6 +16,7 @@
 [INFO] Nothing to compile - all classes are up to date.
 [INFO] 
 [INFO] --- exec:3.6.3:java (default-cli) @ engine ---
+
 Odense,95,120.75
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
