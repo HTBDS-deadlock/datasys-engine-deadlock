@@ -53,11 +53,8 @@ public final class Engine {
     private static void run(String sqlText) {
         StorageEngine engine = new StorageEngine(Path.of("data"));
         Executor executor = new Executor(engine);
-        SqlPrinter printer = new SqlPrinter();
 
         for (ExecutionResult result : executor.run(sqlText)) {
-            // console log only (stderr, see log4j2.xml) -- keeps stdout free for CSV rows
-            LOGGER.debug("executing statement={}", printer.print(result.statement()));
             result.rows().ifPresent(Engine::printCsv);
         }
     }

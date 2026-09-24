@@ -110,14 +110,13 @@ public final class StorageEngine {
 
     /**
      * ensureSession() makes sure that a session ID exists for logging. If there
-     * isnt one it
-     * creates a random ID. It also resets the statement number to 0.
+     * isnt one it creates a random ID. statementNumber is not touched here --
+     * the executor owns that counter (see Executor.run).
      */
     private static void ensureSession() {
         if (MDC.get("sessionId") == null) {
             MDC.put("sessionId", UUID.randomUUID().toString());
         }
-        MDC.put("statementNumber", "0");
     }
 
     // ------------------------------------------------------------------
