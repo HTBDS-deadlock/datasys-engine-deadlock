@@ -1,5 +1,8 @@
 package dk.itu.datasys;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
@@ -12,66 +15,52 @@ public final class Engine {
     // our logger, which we can use to log messages to the console and to a file
     private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
 
-    // the main method which is the entry point of the program; parses and
-    // pretty-prints
-    // the four Task 1 statements (see Task 3: "mvn compile exec:java")
+    // the main method which is the entry point of the program; the SQL front door:
+    // takes either a single SQL statement or a path to a script file as its one
+    // argument, runs it through the executor, and prints each statement's
+    // pretty-printed form followed by its rows (if it was a SELECT).
     public static void main(String[] args) {
         MDC.put("statementNumber", "0");
         MDC.put("sessionId", UUID.randomUUID().toString());
         LOGGER.debug("engine started");
 
         try {
-            String sql = """
-                    CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
-                    COPY trips FROM 'trips.csv';
-                    SELECT * FROM trips WHERE distance > 100;
-                    SELECT * FROM trips;              -- WHERE is optional, as in DuckDB
-                    """;
-
-            SqlPrinter printer = new SqlPrinter();
-            List<Statement> statements = new SqlParser().parse(sql);
-            for (Statement st : statements) {
-                String printed = printer.print(st);
-                System.out.println(printed);
+            if (args.length != 1) {
+                printUsage();
+                return;
             }
-        } catch (Exception e) {
-            LogService logService = LogService.builder()
-                    .logId(1)
-                    .LogServiceReportTime()
-                    .message(String.format("Error Executing SQL", 11))
-                    .build();
-            LOGGER.debug(logService.toString());
+
+            String sqlText = readSqlArgument(args[0]);
+            StorageEngine engine = new StorageEngine(Path.of("data"));
+            Executor executor = new Executor(engine);
+            SqlPrinter printer = new SqlPrinter();
+
+            for (ExecutionResult result : executor.run(sqlText)) {
+                System.out.println(printer.print(result.statement()));
+                result.rows().ifPresent(Engine::printRows);
+            }
         } finally {
             LOGGER.debug("engine stopped");
         }
     }
 
-    /**
-     * Builds the golden trips table in the data directory and runs the three
-     * example queries.
-     */
-    private static void runGoldenDemo() {
-        // store it in data directory, which is the default data directory for the
-        // engine
-        Path dataDirectory = Path.of("data");
-        StorageEngine engine = new StorageEngine(dataDirectory);
-
-        List<ColumnSpec> columns = List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("distance", ColumnType.LONG),
-                new ColumnSpec("price", ColumnType.DOUBLE));
-        engine.createTable("trips", columns);
-        engine.copyFile("trips", Path.of("src", "test", "resources", "trips.csv").toString());
-
-        printResults(engine, "distance > 100", "trips", "distance", Comparison.GREATER_THAN, 100L);
-        printResults(engine, "city = Copenhagen", "trips", "city", Comparison.EQUALS, "Copenhagen");
-        printResults(engine, "price < 50.0", "trips", "price", Comparison.LESS_THAN, 50.0);
+    // reads the SQL text to run: the argument itself if it isn't an existing
+    // file, or that file's contents if it is (so the same argument slot covers
+    // both a single inline statement/script and a path to a script file)
+    private static String readSqlArgument(String arg) {
+        Path path = Path.of(arg);
+        if (Files.isRegularFile(path)) {
+            try {
+                return Files.readString(path);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+        return arg;
     }
 
-    private static void printResults(StorageEngine engine, String label, String table, String column,
-            Comparison comparison, Object constant) {
-        System.out.println(label + ":");
-        for (Object[] row : engine.select(table, column, comparison, constant)) {
+    private static void printRows(List<Object[]> rows) {
+        for (Object[] row : rows) {
             StringBuilder line = new StringBuilder("  ");
             for (int i = 0; i < row.length; i++) {
                 if (i > 0) {
@@ -81,6 +70,10 @@ public final class Engine {
             }
             System.out.println(line);
         }
+    }
+
+    private static void printUsage() {
+        System.out.println("Usage: mvn compile exec:java -Dexec.args=\"<sql-statement-or-path-to-script-file>\"");
     }
 
     String teamName() {
