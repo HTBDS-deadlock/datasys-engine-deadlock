@@ -29,7 +29,13 @@ public final class Engine {
         try {
             String sqlText;
             if (args.length == 1) { // Single SQL input
-                sqlText = args[0];
+                // May omit its trailing ';' (the exercise's own quoting examples
+                // do), unlike a script file, where every statement already ends
+                // with one.
+                sqlText = args[0].strip();
+                if (!sqlText.endsWith(";")) {
+                    sqlText += ";";
+                }
             } else if (args.length == 2 && args[0].equals("-f")) {
                 // SQL input with a file as argument 2.
                 sqlText = readScript(args[1]);
