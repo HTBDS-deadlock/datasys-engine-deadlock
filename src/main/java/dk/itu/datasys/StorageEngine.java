@@ -42,7 +42,7 @@ public final class StorageEngine {
     // the default maximum number of rows per partition, which is a tradeoff between
     // read
     // performance and memory usage
-    private static final int DEFAULT_MAX_ROWS_PER_PARTITION = 65536;
+    private static final int DEFAULT_MAX_ROWS_PER_PARTITION = 10000;
 
     // objectmapper used to read and write the catalog json file,
     private static final ObjectMapper MAPPER = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
