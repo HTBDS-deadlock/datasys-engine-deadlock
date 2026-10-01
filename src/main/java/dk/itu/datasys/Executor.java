@@ -48,7 +48,10 @@ public final class Executor {
 
     private ExecutionResult execute(Statement statement) {
         // console log only (stderr, see log4j2.xml) -- keeps stdout free for CSV rows
-        LOGGER.debug("executing statement={}", printer.print(statement));
+        String str = printer.print(statement);
+        String columnsWithoutCommas = str.replace(",", "");
+
+        LOGGER.debug("executing statement={}", columnsWithoutCommas);
         binder.bind(statement);
         long start = System.currentTimeMillis();
         Optional<List<Object[]>> rows = switch (statement) {

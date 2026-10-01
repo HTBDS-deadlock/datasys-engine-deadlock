@@ -1,3 +1,25 @@
+
+# Package (rebuilds engine) 
+mvn package 
+
+# create and populate trips table  
+$ ./engine -c 
+"CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
+COPY trips FROM 'src/test/resources/trips.csv';"
+
+# Test select sql 
+./engine -c "SELECT * from trips" 
+
+
+# testing 
+$ ./engine -c "SELECT * FROM logs WHERE sessionId ='b99dd47a-5252-4c18-b265-a5bdabfb272e';"
+
+$ ./engine -c "SELECT * FROM logs WHERE sessionId ='b99dd47a-5252-4c18-b265-a5bdabfb272e'; SELECT * FROM logs WHERE statementNumber=0;SELECT * FROM logs WHERE logLevel='ERROR';"
+
+
+
+
+
 # Commands 
 mvn test
 mvn exec:java

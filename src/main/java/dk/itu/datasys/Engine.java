@@ -28,11 +28,11 @@ public final class Engine {
 
         try {
             String sqlText;
-            if (args.length == 1) { // Single SQL input
+            if (args.length == 2 && args[0].equals("-c")) { // Single SQL input
                 // May omit its trailing ';' (the exercise's own quoting examples
                 // do), unlike a script file, where every statement already ends
                 // with one.
-                sqlText = args[0].strip();
+                sqlText = args[1].strip();
                 if (!sqlText.endsWith(";")) {
                     sqlText += ";";
                 }
@@ -82,8 +82,26 @@ public final class Engine {
     private static void printUsage() {
         System.out.println(new Engine().teamName());
         System.out.println("Usage:");
-        System.out.println("  mvn -q compile exec:java -Dexec.args=\"'<sql statement>'\"");
-        System.out.println("  mvn -q compile exec:java -Dexec.args=\"-f <path-to-script.sql>\"");
+        System.out.println("  ./engine -c \"<sql statement>\"");
+        System.out.println("  ./engine -f <path-to-script.sql>");
+
+        /*
+         * 
+         * 
+         * # Package (rebuilds engine)
+         * mvn package
+         * 
+         * # create and populate trips table
+         * $ ./engine -c
+         * "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
+         * COPY trips FROM 'src/test/resources/trips.csv';"
+         * 
+         * # Test select sql
+         * ./engine -c "SELECT * from trips"
+         * 
+         * 
+         */
+
     }
 
     String teamName() {

@@ -17,6 +17,7 @@ public final class SqlPrinter {
         String columns = stmt.columns().stream()
                 .map(c -> c.name() + " " + c.type())
                 .collect(Collectors.joining(", "));
+        // String columnsWithoutCommas = columns.replace(",", "");
         return "CREATE TABLE " + stmt.tableName() + " (" + columns + ");";
     }
 

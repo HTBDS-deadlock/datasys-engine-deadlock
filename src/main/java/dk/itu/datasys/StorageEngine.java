@@ -110,12 +110,16 @@ public final class StorageEngine {
 
     /**
      * ensureSession() makes sure that a session ID exists for logging. If there
-     * isnt one it creates a random ID. statementNumber is not touched here --
-     * the executor owns that counter (see Executor.run).
+     * isnt one it creates a random ID. statementNumber defaults to "0" only if
+     * it was never set at all -- the executor still owns the counter itself
+     * (see Executor.run) and this never overwrites a value it already set.
      */
     private static void ensureSession() {
         if (MDC.get("sessionId") == null) {
             MDC.put("sessionId", UUID.randomUUID().toString());
+        }
+        if (MDC.get("statementNumber") == null) {
+            MDC.put("statementNumber", "0");
         }
     }
 
@@ -794,7 +798,7 @@ public final class StorageEngine {
                 };
             } catch (NumberFormatException e) {
                 LOGGER.error("Malformed value in file={} line={} column={} value={}",
-                        fileName, lineNumber, columns.get(i).name(), raw, e);
+                        fileName, lineNumber, columns.get(i).name(), raw);
                 throw new IllegalArgumentException("Malformed value in file=" + fileName + " line=" + lineNumber
                         + " column=" + columns.get(i).name() + " value=" + raw, e);
             }
