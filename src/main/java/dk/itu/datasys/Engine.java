@@ -26,6 +26,8 @@ public final class Engine {
         MDC.put("sessionId", UUID.randomUUID().toString());
         LOGGER.debug("engine started");
 
+        // run("SELECT * FROM trips WHERE city = 'Odense';");
+
         try {
             String sqlText;
             if (args.length == 2 && args[0].equals("-c")) { // Single SQL input
@@ -43,8 +45,6 @@ public final class Engine {
                 printUsage(); // No arguments. Print team name etc.
                 return;
             }
-
-            run(sqlText);
         } catch (RuntimeException e) {
             // keeps stdout clean: the failure's message goes to stderr, never
             // a raw stack trace mixed into the CSV output

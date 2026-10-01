@@ -38,6 +38,8 @@ public final class Planner {
         } else {
             Predicate predicate = filters.get();
             List<Object[]> columnStats = engine.columnStats(tableName, predicate.columnName());
+            // predicate name can be city. it returns all city rows, next we need to prune
+            // so we only get the right partitons.
             List<Integer> survivingPartitions = new ArrayList<>();
             for (int p = 0; p < columnStats.size(); p++) {
                 Object[] minMax = columnStats.get(p);
