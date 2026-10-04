@@ -36,11 +36,10 @@ public final class Planner {
             root = new ScanOperator(engine, tableName, allPartitions);
             stats = new ScanStats(partitionsTotal, partitionsTotal, 0);
         } else {
-            Predicate predicate = filters.get();
+            Predicate predicate = filters.get(); // columnName()/comparison()/constant().
             List<Object[]> columnStats = engine.columnStats(tableName, predicate.columnName());
-            // predicate name can be city. it returns all city rows, next we need to prune
-            // so we only get the right partitons.
             List<Integer> survivingPartitions = new ArrayList<>();
+            // next we need to prune so we only get the right partitons.
             for (int p = 0; p < columnStats.size(); p++) {
                 Object[] minMax = columnStats.get(p);
                 boolean prune = StorageEngine.canPrune(predicate.comparison(), predicate.constant(), minMax[0],

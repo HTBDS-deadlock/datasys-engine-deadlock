@@ -586,10 +586,14 @@ public final class StorageEngine {
         if (schema == null) {
             throw new IllegalArgumentException("Unknown table: " + tableName);
         }
+        // stats list starter empty [] men med samme size som antal partitions.
         List<Object[]> stats = new ArrayList<>(schema.partitions.size());
         for (PartitionInfo partition : schema.partitions) {
+            // .stats (returnere hele map PartitionInfo)
+            // .get (ser på coloumn fx "distance" returns distance value: [12,31]
             stats.add(partition.stats.get(columnName));
         }
+        // return stats giver den færdige liste: [[12,31],[88,95],[140,187],[210,299]]
         return stats;
     }
 
