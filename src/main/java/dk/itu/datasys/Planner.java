@@ -36,11 +36,16 @@ public final class Planner {
             root = new ScanOperator(engine, tableName, allPartitions);
             stats = new ScanStats(partitionsTotal, partitionsTotal, 0);
         } else {
-            Predicate predicate = filters.get();
+            Predicate predicate = filters.get(); // columnName()/comparison()/constant().
+
+            // columnStats giver den færdige liste af min max på fx distance:
+            // [[12,31],[88,95],[140,187],[210,299]].
             List<Object[]> columnStats = engine.columnStats(tableName, predicate.columnName());
             List<Integer> survivingPartitions = new ArrayList<>();
+            // next we need to prune so we only get the right partitons and loop on the size
+            // of column stat size.
             for (int p = 0; p < columnStats.size(); p++) {
-                Object[] minMax = columnStats.get(p);
+                Object[] minMax = columnStats.get(p); // [12,31]
                 boolean prune = StorageEngine.canPrune(predicate.comparison(), predicate.constant(), minMax[0],
                         minMax[1]);
                 LOGGER.debug("table={} column={} comparison={} const={} partition={} min={} max={} decision={}",

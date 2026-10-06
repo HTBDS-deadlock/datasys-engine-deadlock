@@ -266,6 +266,25 @@ class Week4Tests {
         assertTrue(output.stderr().contains("Unknown table: ghost"));
     }
 
+    @Test
+    void frontDoorFailingStatementWritesErrorLineToEngineLog(@TempDir Path scriptDirectory) throws IOException {
+        Path script = scriptDirectory.resolve("bad.sql");
+        Files.writeString(script, "SELECT * FROM ghost;");
+
+        // logs/engine.log is a shared, append-only file across the whole test
+        // run (Log4j2's RollingFile appender), so only the lines appended by
+        // this call are checked, not the file's full history.
+        Path logFile = Path.of("logs", "engine.log");
+        int linesBefore = Files.exists(logFile) ? Files.readAllLines(logFile, StandardCharsets.UTF_8).size() : 0;
+
+        runEngine("-f", script.toString());
+
+        List<String> allLines = Files.readAllLines(logFile, StandardCharsets.UTF_8);
+        List<String> newLines = allLines.subList(linesBefore, allLines.size());
+
+        assertTrue(newLines.stream().anyMatch(line -> line.contains(",ERROR,") && line.contains("Unknown table: ghost")));
+    }
+
     private List<Object[]> drain(Operator operator) {
         List<Object[]> rows = new ArrayList<>();
         Object[] row;

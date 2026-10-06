@@ -42,7 +42,7 @@ public final class StorageEngine {
     // the default maximum number of rows per partition, which is a tradeoff between
     // read
     // performance and memory usage
-    private static final int DEFAULT_MAX_ROWS_PER_PARTITION = 65536;
+    private static final int DEFAULT_MAX_ROWS_PER_PARTITION = 10000;
 
     // objectmapper used to read and write the catalog json file,
     private static final ObjectMapper MAPPER = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
@@ -110,12 +110,16 @@ public final class StorageEngine {
 
     /**
      * ensureSession() makes sure that a session ID exists for logging. If there
-     * isnt one it creates a random ID. statementNumber is not touched here --
-     * the executor owns that counter (see Executor.run).
+     * isnt one it creates a random ID. statementNumber defaults to "0" only if
+     * it was never set at all -- the executor still owns the counter itself
+     * (see Executor.run) and this never overwrites a value it already set.
      */
     private static void ensureSession() {
         if (MDC.get("sessionId") == null) {
             MDC.put("sessionId", UUID.randomUUID().toString());
+        }
+        if (MDC.get("statementNumber") == null) {
+            MDC.put("statementNumber", "0");
         }
     }
 
@@ -582,10 +586,14 @@ public final class StorageEngine {
         if (schema == null) {
             throw new IllegalArgumentException("Unknown table: " + tableName);
         }
+        // stats list starter empty [] men med samme size som antal partitions.
         List<Object[]> stats = new ArrayList<>(schema.partitions.size());
         for (PartitionInfo partition : schema.partitions) {
+            // .stats (returnere hele map PartitionInfo)
+            // .get (ser på coloumn fx "distance" returns distance value: [12,31]
             stats.add(partition.stats.get(columnName));
         }
+        // return stats giver den færdige liste: [[12,31],[88,95],[140,187],[210,299]]
         return stats;
     }
 
@@ -794,7 +802,7 @@ public final class StorageEngine {
                 };
             } catch (NumberFormatException e) {
                 LOGGER.error("Malformed value in file={} line={} column={} value={}",
-                        fileName, lineNumber, columns.get(i).name(), raw, e);
+                        fileName, lineNumber, columns.get(i).name(), raw);
                 throw new IllegalArgumentException("Malformed value in file=" + fileName + " line=" + lineNumber
                         + " column=" + columns.get(i).name() + " value=" + raw, e);
             }
