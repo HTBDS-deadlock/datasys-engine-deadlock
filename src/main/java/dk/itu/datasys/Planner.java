@@ -32,9 +32,15 @@ public final class Planner {
             List<Integer> allPartitions = new ArrayList<>(partitionsTotal);
             for (int p = 0; p < partitionsTotal; p++) {
                 allPartitions.add(p);
+
+                LOGGER.debug("table={}  partition={}  decision={} reason={}", tableName, p, "READ", "noPredicate");
+
             }
             root = new ScanOperator(engine, tableName, allPartitions);
             stats = new ScanStats(partitionsTotal, partitionsTotal, 0);
+
+            // logging
+
         } else {
             Predicate predicate = filters.get(); // columnName()/comparison()/constant().
 

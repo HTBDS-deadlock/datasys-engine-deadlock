@@ -36,7 +36,11 @@ public final class Executor {
         try {
             for (Statement statement : statements) {
                 MDC.put("statementNumber", String.valueOf(++statementNumber));
-                results.add(execute(statement));
+                try {
+                    results.add(execute(statement));
+                } catch (RuntimeException e) {
+                    LOGGER.error("Statement failed reason ={}", e.getMessage());
+                }
             }
         } finally {
             // Puts the 0 back so lines after the script (e.g. engine stopped)
