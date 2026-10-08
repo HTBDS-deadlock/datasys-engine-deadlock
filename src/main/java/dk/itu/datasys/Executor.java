@@ -30,9 +30,9 @@ public final class Executor {
     public List<ExecutionResult> run(String sqlText) {
         // Script-level parsing happens before the counter starts, so it keeps
         // the 0 set at engine startup.
+        int statementNumber = 0;
         List<Statement> statements = parser.parse(sqlText);
         List<ExecutionResult> results = new ArrayList<>(statements.size());
-        int statementNumber = 0;
         try {
             for (Statement statement : statements) {
                 MDC.put("statementNumber", String.valueOf(++statementNumber));
@@ -40,6 +40,7 @@ public final class Executor {
                     results.add(execute(statement));
                 } catch (RuntimeException e) {
                     LOGGER.error("Statement failed reason ={}", e.getMessage());
+                    throw e;
                 }
             }
         } finally {
