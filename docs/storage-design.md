@@ -2,8 +2,12 @@
 # Package (rebuilds engine) 
 mvn package 
 
-# create and populate trips table  
-$ ./engine -c 
+# create and populate trips table  (GIT BASH )
+./engine -f "q.sql"
+./engine -c "select * from trips where distance < 100"
+> OR 
+
+./engine -c 
 "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
 COPY trips FROM 'src/test/resources/trips.csv';"
 

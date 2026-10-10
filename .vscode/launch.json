@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Debug Engine (q.sql)",
+            "request": "launch",
+            "mainClass": "dk.itu.datasys.Engine",
+            "projectName": "engine",
+            "cwd": "${workspaceFolder}",
+            "args": ["-f", "q.sql"]
+        },
+        {
+            "type": "java",
+            "name": "Debug Engine (ask for SQL)",
+            "request": "launch",
+            "mainClass": "dk.itu.datasys.Engine",
+            "projectName": "engine",
+            "cwd": "${workspaceFolder}",
+            "args": ["-c", "${input:sql}"]
+        }
+    ],
+    "inputs": [
+        {
+            "id": "sql",
+            "type": "promptString",
+            "description": "SQL statement to run",
+            "default": "SELECT * FROM trips WHERE city = 'Odense';"
+        }
+    ]
+}

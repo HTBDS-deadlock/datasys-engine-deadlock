@@ -1,12 +1,5 @@
 package dk.itu.datasys;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -24,16 +17,23 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+
 /**
  * Own-binary-format storage core: a JSON catalog (schema, data file,
- * partitions,
- * per-column min/max) plus one PAX-laid-out data file per table. See
- * docs/storage-design.md for the rationale behind each choice below.
+ * partitions, per-column min/max) plus one PAX-laid-out data file per table.
+ * See docs/storage-design.md for the rationale behind each choice below.
  */
 public final class StorageEngine {
+
     // our logger, which we can use to log messages to the console and to a file
     private static final Logger LOGGER = LoggerFactory.getLogger(StorageEngine.class);
-    private static final byte[] MAGIC = { 'P', 'A', 'X', '1' };
+    private static final byte[] MAGIC = {'P', 'A', 'X', '1'};
     private static final int FORMAT_VERSION = 1;
     // the number of rows in a PAX group, which is a tradeoff between read
     // performance
@@ -42,7 +42,7 @@ public final class StorageEngine {
     // the default maximum number of rows per partition, which is a tradeoff between
     // read
     // performance and memory usage
-    private static final int DEFAULT_MAX_ROWS_PER_PARTITION = 1;
+    private static final int DEFAULT_MAX_ROWS_PER_PARTITION = 10_000;
 
     // objectmapper used to read and write the catalog json file,
     private static final ObjectMapper MAPPER = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
@@ -65,15 +65,13 @@ public final class StorageEngine {
     // data directory
     // if it does not exist and loading the catalog from the catalog file if it
     // exists
-
     /**
-     * StorageEngine constructor that calls the other constructor with the default
-     * maximum number
-     * of rows per partition. Used when the user does not specify a maximum number
-     * of rows
-     * 
+     * StorageEngine constructor that calls the other constructor with the
+     * default maximum number of rows per partition. Used when the user does not
+     * specify a maximum number of rows
+     *
      * @param dataDirectory the directory where the catalog and data files are
-     *                      stored
+     * stored
      */
     public StorageEngine(Path dataDirectory) {
         this(dataDirectory, DEFAULT_MAX_ROWS_PER_PARTITION);
@@ -81,13 +79,13 @@ public final class StorageEngine {
 
     /**
      * StorageEngine constructor that initializes the storage engine with the
-     * specified
-     * data directory and maximum number of rows per partition.
+     * specified data directory and maximum number of rows per partition.
      *
-     * @param dataDirectory       the directory where the catalog and data files are
-     *                            stored
+     * @param dataDirectory the directory where the catalog and data files are
+     * stored
      * @param maxRowsPerPartition the maximum number of rows per partition
-     * @throws UncheckedIOException if an I/O error occurs while loading the catalog
+     * @throws UncheckedIOException if an I/O error occurs while loading the
+     * catalog
      */
     public StorageEngine(Path dataDirectory, int maxRowsPerPartition) {
         // Setting the data directory, catalog path, and maximum number of rows per
@@ -127,15 +125,14 @@ public final class StorageEngine {
     // createTable
     // ------------------------------------------------------------------
     /**
-     * Creates a new table with the specified name and columns. The table is added
-     * to the catalog and the catalog is saved to the catalog file.
+     * Creates a new table with the specified name and columns. The table is
+     * added to the catalog and the catalog is saved to the catalog file.
      *
      * @param tableName
      * @param columns
-     * @throws IllegalArgumentException if the table already exists, the column list
-     *                                  is empty, or column names repeat.
+     * @throws IllegalArgumentException if the table already exists, the column
+     * list is empty, or column names repeat.
      */
-
     public void createTable(String tableName, List<ColumnSpec> columns) {
         ensureSession();
         if (tables.containsKey(tableName)) {
@@ -170,27 +167,23 @@ public final class StorageEngine {
     // ------------------------------------------------------------------
     // copyFile
     // ------------------------------------------------------------------
-
     /**
-     * Copies the contents of a CSV file into the specified table. The CSV file is
-     * read line by line,
-     * and each line is parsed into a row of data according to the table's schema.
-     * The rows are then written to a binary data file in PAX layout, with
-     * partitions created based
-     * on the maximum number of rows per partition. The catalog is updated with the
-     * new data file and
-     * partition information, and the catalog is saved to the catalog file.
-     * 
+     * Copies the contents of a CSV file into the specified table. The CSV file
+     * is read line by line, and each line is parsed into a row of data
+     * according to the table's schema. The rows are then written to a binary
+     * data file in PAX layout, with partitions created based on the maximum
+     * number of rows per partition. The catalog is updated with the new data
+     * file and partition information, and the catalog is saved to the catalog
+     * file.
+     *
      * @param tableName
      * @param csvFilePath
-     * @throws IllegalArgumentException      if the line whose field count does not
-     *                                       match the number of columns in the
-     *                                       table (happens in parseLine)
-     * @throws IllegalArgumentException      if the table does not exist
+     * @throws IllegalArgumentException if the line whose field count does not
+     * match the number of columns in the table (happens in parseLine)
+     * @throws IllegalArgumentException if the table does not exist
      * @throws UnsupportedOperationException if the table already has data
      *
      */
-
     public void copyFile(String tableName, String csvFilePath) {
         ensureSession();
         // gets the schema of the specified table, and throws an exception if the table
@@ -219,8 +212,7 @@ public final class StorageEngine {
         // opens the binary data file for writing and the CSV file for reading, and
         // writes the
         // magic number and format version to the binary data file
-        try (RandomAccessFile raf = new RandomAccessFile(dataFilePath.toFile(), "rw");
-                BufferedReader reader = Files.newBufferedReader(Path.of(csvFilePath), StandardCharsets.UTF_8)) {
+        try (RandomAccessFile raf = new RandomAccessFile(dataFilePath.toFile(), "rw"); BufferedReader reader = Files.newBufferedReader(Path.of(csvFilePath), StandardCharsets.UTF_8)) {
 
             raf.setLength(0);
             raf.write(MAGIC);
@@ -230,8 +222,7 @@ public final class StorageEngine {
             // parseLine into a row of data according
             // to the tables schema, and adding the row to a batch. When the batch reaches
             // the maximum number of rows per partition, the batch is written to the binary
-            // data file
-            // as a new partition with the function writePartition, and the batch is
+            // data file as a new partition with the function writePartition, and the batch is
             // cleared.
             // After all lines have been read, any remaining rows in the batch are written
             // as a final partition.
@@ -248,6 +239,8 @@ public final class StorageEngine {
                     batch.clear();
                 }
             }
+
+            // say partition size is 10.000 and there is only 8_000 let then the reiaming goes in last partition
             if (!batch.isEmpty()) {
                 partitions.add(writePartition(raf, schema.columns, batch, tableName, partitions.size()));
             }
@@ -272,14 +265,14 @@ public final class StorageEngine {
 
     /**
      * Writes a partition of rows to the binary data file in PAX layout.
-     * 
+     *
      * @param raf
      * @param columns
      * @param rows
      * @param tableName
      * @param partitionIndex
      * @return partition information including byte offset, row count, and
-     *         per-column min/max statistics
+     * per-column min/max statistics
      */
     private PartitionInfo writePartition(RandomAccessFile raf, List<ColumnSpec> columns,
             List<Object[]> rows, String tableName, int partitionIndex) throws IOException {
@@ -342,23 +335,20 @@ public final class StorageEngine {
     // ------------------------------------------------------------------
     /**
      * Selects rows from the specified table where the values in the specified
-     * column satisfy the
-     * given comparison with the provided constant.
-     * The method reads the table's data file in PAX layout, prunes partitions based
-     * on the
-     * min/max statistics for the specified column, and returns a list of matching
-     * rows.
-     * 
+     * column satisfy the given comparison with the provided constant. The
+     * method reads the table's data file in PAX layout, prunes partitions based
+     * on the min/max statistics for the specified column, and returns a list of
+     * matching rows.
+     *
      * @param tableName
      * @param columnName
      * @param comparison
      * @param constant
-     * @return every matching row as an Object[] in schema column order, rows are
-     *         returned in the order they appear in the data file
+     * @return every matching row as an Object[] in schema column order, rows
+     * are returned in the order they appear in the data file
      * @throws IllegalArgumentException if the table or column does not exist,
-     *                                  or if the constant's type does not match the
-     *                                  column's type with the validateConstantType
-     *                                  method
+     * or if the constant's type does not match the column's type with the
+     * validateConstantType method
      */
     public List<Object[]> select(String tableName, String columnName, Comparison comparison, Object constant) {
         ensureSession();
@@ -401,10 +391,11 @@ public final class StorageEngine {
      *
      * @param tableName
      * @param partitionNumber index into the table's partition list
-     * @return the rows in the partition, as Object[] arrays in schema column order
+     * @return the rows in the partition, as Object[] arrays in schema column
+     * order
      * @throws IllegalArgumentException if the table is unknown
-     * @throws UncheckedIOException     if an I/O error occurs while reading the
-     *                                  data file
+     * @throws UncheckedIOException if an I/O error occurs while reading the
+     * data file
      */
     public List<Object[]> readPartition(String tableName, int partitionNumber) {
         TableSchema schema = tables.get(tableName);
@@ -421,10 +412,9 @@ public final class StorageEngine {
     }
 
     /**
-     * Reads a partition of rows from the binary data file in PAX layout.
-     * The method seeks to the byte offset of the partition,
-     * reads the rows in groups of PAX_GROUP_SIZE, and returns a list of rows as
-     * Object[] arrays
+     * Reads a partition of rows from the binary data file in PAX layout. The
+     * method seeks to the byte offset of the partition, reads the rows in
+     * groups of PAX_GROUP_SIZE, and returns a list of rows as Object[] arrays
      * in schema column order.
      *
      * @param raf
@@ -480,19 +470,22 @@ public final class StorageEngine {
     }
 
     /**
-     * Reads a value from the binary data file based on the specified column type.
-     * 
+     * Reads a value from the binary data file based on the specified column
+     * type.
+     *
      * @param raf
      * @param type
-     * @return the value read from the binary data file, decoded based on the column
-     *         type
+     * @return the value read from the binary data file, decoded based on the
+     * column type
      * @throws IOException
      */
     private static Object readValue(RandomAccessFile raf, ColumnType type) throws IOException {
         // return switches on the column type to read the appropriate value from raf
         return switch (type) {
-            case LONG -> raf.readLong();
-            case DOUBLE -> raf.readDouble();
+            case LONG ->
+                raf.readLong();
+            case DOUBLE ->
+                raf.readDouble();
             case STRING -> {
                 int length = raf.readInt();
                 byte[] bytes = new byte[length];
@@ -505,16 +498,14 @@ public final class StorageEngine {
     }
 
     /**
-     * Validates the file header to ensure the data file is in the expected format
-     * and version.
-     * Checks that the file starts with the expected MAGIC number and
-     * FORMAT_VERSION.
-     * 
+     * Validates the file header to ensure the data file is in the expected
+     * format and version. Checks that the file starts with the expected MAGIC
+     * number and FORMAT_VERSION.
+     *
      * @param raf the RandomAccessFile to validate
-     * @throws IOException              if an I/O error occurs while reading the
-     *                                  header
+     * @throws IOException if an I/O error occurs while reading the header
      * @throws IllegalArgumentException if the magic number or format version is
-     *                                  invalid
+     * invalid
      */
     private static void validateFileHeader(RandomAccessFile raf) throws IOException {
         byte[] magic = new byte[MAGIC.length];
@@ -537,9 +528,12 @@ public final class StorageEngine {
         // checks if the type of the constant matches the expected type for the
         // specified column type using a switch expression
         boolean ok = switch (type) {
-            case STRING -> constant.getClass() == String.class;
-            case LONG -> constant.getClass() == Long.class;
-            case DOUBLE -> constant.getClass() == Double.class;
+            case STRING ->
+                constant.getClass() == String.class;
+            case LONG ->
+                constant.getClass() == Long.class;
+            case DOUBLE ->
+                constant.getClass() == Double.class;
         };
         // throws an IllegalArgumentException if the constant's type does not match the
         // column type,
@@ -554,7 +548,6 @@ public final class StorageEngine {
     // ------------------------------------------------------------------
     // schema lookups
     // ------------------------------------------------------------------
-
     /**
      * The table's schema, in column order. Throws IllegalArgumentException if
      * unknown.
@@ -567,7 +560,9 @@ public final class StorageEngine {
         return List.copyOf(schema.columns);
     }
 
-    /** The table's partition count. Throws IllegalArgumentException if unknown. */
+    /**
+     * The table's partition count. Throws IllegalArgumentException if unknown.
+     */
     public int partitionCount(String tableName) {
         TableSchema schema = tables.get(tableName);
         if (schema == null) {
@@ -578,8 +573,8 @@ public final class StorageEngine {
 
     /**
      * The min/max summary of columnName in each of the table's partitions, as
-     * {min, max} pairs indexed by partition number. Used by the planner to decide
-     * which partitions can be pruned without opening the data file.
+     * {min, max} pairs indexed by partition number. Used by the planner to
+     * decide which partitions can be pruned without opening the data file.
      */
     public List<Object[]> columnStats(String tableName, String columnName) {
         TableSchema schema = tables.get(tableName);
@@ -590,8 +585,8 @@ public final class StorageEngine {
         List<Object[]> stats = new ArrayList<>(schema.partitions.size());
         for (PartitionInfo partition : schema.partitions) {
             // .stats (returnere hele map PartitionInfo)
-            // .get (ser på coloumn fx "distance" returns distance value: [12,31]
-            stats.add(partition.stats.get(columnName));
+            // .get (ser på coloumn fx "distance" returns distance value: [12,31] altså key/value pair
+            stats.add(partition.stats.get(columnName)); //
         }
         // return stats giver den færdige liste: [[12,31],[88,95],[140,187],[210,299]]
         return stats;
@@ -602,11 +597,10 @@ public final class StorageEngine {
     // exercise them directly (see Note on visibility in the exercise).
     // ------------------------------------------------------------------
     /**
-     * Encodes a value of the specified column type into a byte array for storage in
-     * the binary data file.
-     * Used when writing data to the binary file to convert the value into a format
-     * suitable for storage.
-     * 
+     * Encodes a value of the specified column type into a byte array for
+     * storage in the binary data file. Used when writing data to the binary
+     * file to convert the value into a format suitable for storage.
+     *
      * @param type
      * @param value
      * @return the encoded byte array representing the value
@@ -617,24 +611,25 @@ public final class StorageEngine {
         // and for STRING type, it encodes the string into UTF-8 bytes and prepends the
         // length of the string as an integer to the byte array
         return switch (type) {
-            case LONG -> ByteBuffer.allocate(Long.BYTES).putLong((Long) value).array();
-            case DOUBLE -> ByteBuffer.allocate(Double.BYTES).putDouble((Double) value).array();
+            case LONG ->
+                ByteBuffer.allocate(Long.BYTES).putLong((Long) value).array();
+            case DOUBLE ->
+                ByteBuffer.allocate(Double.BYTES).putDouble((Double) value).array();
             case STRING -> {
                 byte[] stringBytes = ((String) value).getBytes(StandardCharsets.UTF_8);
                 yield ByteBuffer.allocate(Integer.BYTES + stringBytes.length)
-                        .putInt(stringBytes.length)
-                        .put(stringBytes)
-                        .array();
+                .putInt(stringBytes.length)
+                .put(stringBytes)
+                .array();
             }
         };
     }
 
     /**
-     * Decodes a byte array from the binary data file into a value of the specified
-     * column type.
-     * Used when reading data from the binary file to convert the stored bytes back
-     * into their original types.
-     * 
+     * Decodes a byte array from the binary data file into a value of the
+     * specified column type. Used when reading data from the binary file to
+     * convert the stored bytes back into their original types.
+     *
      * @param type
      * @param bytes
      * @return the decoded value of the specified column type
@@ -649,8 +644,10 @@ public final class StorageEngine {
         // reads the corresponding number of
         // bytes to construct the string using UTF-8 encoding
         return switch (type) {
-            case LONG -> buffer.getLong();
-            case DOUBLE -> buffer.getDouble();
+            case LONG ->
+                buffer.getLong();
+            case DOUBLE ->
+                buffer.getDouble();
             case STRING -> {
                 int length = buffer.getInt();
                 byte[] stringBytes = new byte[length];
@@ -661,11 +658,12 @@ public final class StorageEngine {
     }
 
     /**
-     * Computes the minimum and maximum values from a list of comparable objects.
-     * 
+     * Computes the minimum and maximum values from a list of comparable
+     * objects.
+     *
      * @param values
      * @return an array containing the minimum value at index 0 and the maximum
-     *         value at index 1
+     * value at index 1
      * @throws IllegalArgumentException if the list is empty
      */
     static Object[] minMax(List<Object> values) {
@@ -685,23 +683,22 @@ public final class StorageEngine {
                 max = value;
             }
         }
-        return new Object[] { min, max };
+        return new Object[]{min, max};
     }
 
     /**
-     * Compares two values of the same type (Long, Double, or String) and returns a
-     * negative integer,
-     * zero, or a positive integer as the first value is less than, equal to, or
-     * greater than the second value.
-     * Used in minMax, canPrune, and matches methods to compare values of different
+     * Compares two values of the same type (Long, Double, or String) and
+     * returns a negative integer, zero, or a positive integer as the first
+     * value is less than, equal to, or greater than the second value. Used in
+     * minMax, canPrune, and matches methods to compare values of different
      * types.
-     * 
+     *
      * @param a
      * @param b
-     * @return a negative integer, zero, or a positive integer as the first value is
-     *         less than, equal to, or greater than the second value
-     * @throws IllegalArgumentException if the values are of different types or not
-     *                                  comparable
+     * @return a negative integer, zero, or a positive integer as the first
+     * value is less than, equal to, or greater than the second value
+     * @throws IllegalArgumentException if the values are of different types or
+     * not comparable
      */
     static int compareValues(Object a, Object b) {
         if (a instanceof Long la && b instanceof Long lb) {
@@ -718,10 +715,10 @@ public final class StorageEngine {
 
     /**
      * Determines whether a partition can be pruned based on the comparison,
-     * constant, and the min/max values of the column in the partition.
-     * Used in the select method to decide whether to skip reading a partition based
-     * on the min/max statistics.
-     * 
+     * constant, and the min/max values of the column in the partition. Used in
+     * the select method to decide whether to skip reading a partition based on
+     * the min/max statistics.
+     *
      * @param comparison
      * @param constant
      * @param min
@@ -730,49 +727,53 @@ public final class StorageEngine {
      */
     static boolean canPrune(Comparison comparison, Object constant, Object min, Object max) {
         return switch (comparison) {
-            case EQUALS -> compareValues(constant, min) < 0 || compareValues(constant, max) > 0;
-            case GREATER_THAN -> compareValues(max, constant) <= 0;
-            case LESS_THAN -> compareValues(min, constant) >= 0;
+            case EQUALS ->
+                compareValues(constant, min) < 0 || compareValues(constant, max) > 0;
+            case GREATER_THAN ->
+                compareValues(max, constant) <= 0;
+            case LESS_THAN ->
+                compareValues(min, constant) >= 0;
         };
     }
 
     /**
      * Determines whether a value matches the specified comparison with the
-     * constant.
-     * Used in the select method to filter rows based on the comparison and
-     * constant.
-     * 
+     * constant. Used in the select method to filter rows based on the
+     * comparison and constant.
+     *
      * @param value
      * @param comparison
      * @param constant
      * @return true if the value matches the comparison with the constant, false
-     *         otherwise
+     * otherwise
      */
     static boolean matches(Object value, Comparison comparison, Object constant) {
         int cmp = compareValues(value, constant);
         return switch (comparison) {
-            case EQUALS -> cmp == 0;
-            case GREATER_THAN -> cmp > 0;
-            case LESS_THAN -> cmp < 0;
+            case EQUALS ->
+                cmp == 0;
+            case GREATER_THAN ->
+                cmp > 0;
+            case LESS_THAN ->
+                cmp < 0;
         };
     }
 
     /**
-     * Parses a line from a CSV file into an array of objects based on the specified
-     * column specifications.
-     * Used in the copyFile method to convert each line of the CSV file into a row
-     * of data according to the table's schema.
-     * 
+     * Parses a line from a CSV file into an array of objects based on the
+     * specified column specifications. Used in the copyFile method to convert
+     * each line of the CSV file into a row of data according to the table's
+     * schema.
+     *
      * @param line
      * @param columns
      * @param fileName
      * @param lineNumber
-     * @return an array of objects representing the parsed values of the line, in
-     *         schema column order
-     * @throws IllegalArgumentException if the number of fields in the line does not
-     *                                  match the number of columns in the table,
-     *                                  or if a value cannot be parsed into the
-     *                                  expected type
+     * @return an array of objects representing the parsed values of the line,
+     * in schema column order
+     * @throws IllegalArgumentException if the number of fields in the line does
+     * not match the number of columns in the table, or if a value cannot be
+     * parsed into the expected type
      */
     static Object[] parseLine(String line, List<ColumnSpec> columns, String fileName, int lineNumber) {
         // splits the line into fields using a comma as the delimiter, allowing for
@@ -796,9 +797,12 @@ public final class StorageEngine {
                 // uses a switch expression to parse the raw field value into the appropriate
                 // type based on the column type
                 row[i] = switch (type) {
-                    case STRING -> raw;
-                    case LONG -> Long.parseLong(raw);
-                    case DOUBLE -> Double.parseDouble(raw);
+                    case STRING ->
+                        raw;
+                    case LONG ->
+                        Long.parseLong(raw);
+                    case DOUBLE ->
+                        Double.parseDouble(raw);
                 };
             } catch (NumberFormatException e) {
                 LOGGER.error("Malformed value in file={} line={} column={} value={}",
@@ -816,16 +820,15 @@ public final class StorageEngine {
     // Catalog persistence (Jackson-backed JSON, see docs/storage-design.md)
     // ------------------------------------------------------------------
     /**
-     * Loads the catalog from the catalog file (catalog.json) into memory. If the
-     * catalog file does not exist, it initializes an empty catalog.
-     * The catalog is represented as a map of table names to their corresponding
-     * table schemas.
-     * Used during the initialization of the StorageEngine to ensure that the
-     * catalog is available for operations like fx creating tables and copying
-     * files.
-     * 
-     * @throws UncheckedIOException if an I/O error occurs while reading the catalog
-     *                              file
+     * Loads the catalog from the catalog file (catalog.json) into memory. If
+     * the catalog file does not exist, it initializes an empty catalog. The
+     * catalog is represented as a map of table names to their corresponding
+     * table schemas. Used during the initialization of the StorageEngine to
+     * ensure that the catalog is available for operations like fx creating
+     * tables and copying files.
+     *
+     * @throws UncheckedIOException if an I/O error occurs while reading the
+     * catalog file
      */
     private void loadCatalog() {
         // clears the in-memory catalog of tables to ensure a fresh start before loading
@@ -853,17 +856,14 @@ public final class StorageEngine {
     }
 
     /**
-     * Saves the in-memory catalog of tables to the catalog file (catalog.json) in
-     * json format.
-     * The catalog is represented as a map of table names to their corresponding
-     * table schemas,
-     * which are converted to TableEntry objects for serialization.
-     * Used after operations that modify the catalog, such as creating tables or
-     * copying files, to
-     * persist the changes to disk.
-     * 
+     * Saves the in-memory catalog of tables to the catalog file (catalog.json)
+     * in json format. The catalog is represented as a map of table names to
+     * their corresponding table schemas, which are converted to TableEntry
+     * objects for serialization. Used after operations that modify the catalog,
+     * such as creating tables or copying files, to persist the changes to disk.
+     *
      * @throws UncheckedIOException if an I/O error occurs while writing to the
-     *                              catalog file
+     * catalog file
      */
     private void saveCatalog() {
         // creates a new CatalogFile object
@@ -885,14 +885,14 @@ public final class StorageEngine {
     }
 
     /**
-     * Converts a TableEntry object (used for json serialization) into a TableSchema
-     * object (used in-memory).
-     * Used when loading the catalog from the catalog file to reconstruct the
-     * in-memory representation of the tables.
-     * 
+     * Converts a TableEntry object (used for json serialization) into a
+     * TableSchema object (used in-memory). Used when loading the catalog from
+     * the catalog file to reconstruct the in-memory representation of the
+     * tables.
+     *
      * @param entry
      * @return the corresponding TableSchema object with columns, data file, and
-     *         partition information
+     * partition information
      */
     private static TableSchema toSchema(TableEntry entry) {
         // creates a new TableSchema object and initializes its columns and partitions
@@ -922,7 +922,7 @@ public final class StorageEngine {
                 ColumnType type = columnType(schema.columns, statsEntry.getKey());
                 Object min = parseTyped(type, statsEntry.getValue().min);
                 Object max = parseTyped(type, statsEntry.getValue().max);
-                info.stats.put(statsEntry.getKey(), new Object[] { min, max });
+                info.stats.put(statsEntry.getKey(), new Object[]{min, max});
             }
             schema.partitions.add(info);
         }
@@ -930,14 +930,13 @@ public final class StorageEngine {
     }
 
     /**
-     * Converts a TableSchema object (used in-memory) into a TableEntry object (used
-     * for json serialization).
-     * Used when saving the catalog to the catalog file to serialize the in-memory
-     * representation of the tables.
-     * 
+     * Converts a TableSchema object (used in-memory) into a TableEntry object
+     * (used for json serialization). Used when saving the catalog to the
+     * catalog file to serialize the in-memory representation of the tables.
+     *
      * @param schema
      * @return the corresponding TableEntry object with columns, data file, and
-     *         partition information
+     * partition information
      */
     private static TableEntry toEntry(TableSchema schema) {
         TableEntry entry = new TableEntry();
@@ -977,36 +976,36 @@ public final class StorageEngine {
     /**
      * Parses a raw string value into an object of the specified column type.
      * Used in the method toSchema (where the catalog is loaded from the catalog
-     * file,
-     * to convert the min/max statistics from strings back into their original types
-     * for in-memory representation.
-     * 
+     * file, to convert the min/max statistics from strings back into their
+     * original types for in-memory representation.
+     *
      * @param type
      * @param raw
      * @return the parsed object of the specified column type
      */
     private static Object parseTyped(ColumnType type, String raw) {
         return switch (type) {
-            case STRING -> raw;
-            case LONG -> Long.parseLong(raw);
-            case DOUBLE -> Double.parseDouble(raw);
+            case STRING ->
+                raw;
+            case LONG ->
+                Long.parseLong(raw);
+            case DOUBLE ->
+                Double.parseDouble(raw);
         };
     }
 
     /**
      * Finds the column type for a given column name in the list of column
-     * specifications.
-     * Used in the method toSchema (where the catalog is loaded from the catalog
-     * file,
-     * to determine the type of a column based on its name when reconstructing the
-     * in-memory representation of the table schema.
-     * 
+     * specifications. Used in the method toSchema (where the catalog is loaded
+     * from the catalog file, to determine the type of a column based on its
+     * name when reconstructing the in-memory representation of the table
+     * schema.
+     *
      * @param columns
      * @param name
      * @return the ColumnType of the specified column name
-     * @throws IllegalStateException if the column name is not found in the list of
-     *                               column specifications, indicating an
-     *                               inconsistency in the catalog data
+     * @throws IllegalStateException if the column name is not found in the list
+     * of column specifications, indicating an inconsistency in the catalog data
      */
     private static ColumnType columnType(List<ColumnSpec> columns, String name) {
         for (ColumnSpec column : columns) {
@@ -1021,26 +1020,25 @@ public final class StorageEngine {
     // In-memory model
     // ------------------------------------------------------------------
     /**
-     * Represents the schema of a table, including its columns, data file name, and
-     * partition information.
-     * Used in-memory to manage the structure and metadata of tables within the
-     * storage engine.
-     * TableSchema
+     * Represents the schema of a table, including its columns, data file name,
+     * and partition information. Used in-memory to manage the structure and
+     * metadata of tables within the storage engine. TableSchema
      */
     private static final class TableSchema {
+
         List<ColumnSpec> columns;
         String dataFile;
         List<PartitionInfo> partitions;
     }
 
     /**
-     * Represents information about a partition of rows in a table, including its
-     * byte offset in the data file,
-     * the number of rows in the partition, and per-column min/max statistics.
-     * Used in-memory to manage the metadata of partitions within the storage
-     * engine.
+     * Represents information about a partition of rows in a table, including
+     * its byte offset in the data file, the number of rows in the partition,
+     * and per-column min/max statistics. Used in-memory to manage the metadata
+     * of partitions within the storage engine.
      */
     private static final class PartitionInfo {
+
         long byteOffset;
         int rowCount;
         Map<String, Object[]> stats;
@@ -1052,50 +1050,51 @@ public final class StorageEngine {
     // ------------------------------------------------------------------
     /**
      * Represents the structure of the catalog file (catalog.json) for JSON
-     * serialization and deserialization.
-     * Contains a map of table names to their corresponding TableEntry objects,
-     * which hold the schema and partition information for each table.
-     * Used for persisting the catalog to disk and loading it
+     * serialization and deserialization. Contains a map of table names to their
+     * corresponding TableEntry objects, which hold the schema and partition
+     * information for each table. Used for persisting the catalog to disk and
+     * loading it
      *
      */
     private static final class CatalogFile {
+
         public Map<String, TableEntry> tables = new LinkedHashMap<>();
     }
 
     /**
-     * Represents the schema of a table for JSON serialization and deserialization.
-     * Contains a list of ColumnEntry objects for the table's columns, the name of
-     * the data file, and a list of PartitionEntry objects for the table's
-     * partitions.
-     * Used for persisting the table schema to disk and loading it from the catalog
-     * file.
+     * Represents the schema of a table for JSON serialization and
+     * deserialization. Contains a list of ColumnEntry objects for the table's
+     * columns, the name of the data file, and a list of PartitionEntry objects
+     * for the table's partitions. Used for persisting the table schema to disk
+     * and loading it from the catalog file.
      *
      */
     private static final class TableEntry {
+
         public List<ColumnEntry> columns = new ArrayList<>();
         public String dataFile;
         public List<PartitionEntry> partitions = new ArrayList<>();
     }
 
     /**
-     * Represents a column in a table for JSON serialization and deserialization.
-     * Contains the name and type of the column.
+     * Represents a column in a table for JSON serialization and
+     * deserialization. Contains the name and type of the column.
      */
     private static final class ColumnEntry {
+
         public String name;
         public String type;
     }
 
     /**
      * Represents a partition of rows in a table for JSON serialization and
-     * deserialization.
-     * Contains the byte offset of the partition in the data file, the number of
-     * rows in
-     * the partition, and a map of per-column min/max statistics.
-     * Used for persisting the partition metadata to disk and loading it from the
-     * catalog file.
+     * deserialization. Contains the byte offset of the partition in the data
+     * file, the number of rows in the partition, and a map of per-column
+     * min/max statistics. Used for persisting the partition metadata to disk
+     * and loading it from the catalog file.
      */
     private static final class PartitionEntry {
+
         public long byteOffset;
         public int rowCount;
         public Map<String, StatsEntry> stats = new LinkedHashMap<>();
@@ -1103,13 +1102,13 @@ public final class StorageEngine {
 
     /**
      * Represents the min and max values of a column in a partition for JSON
-     * serialization and deserialization.
-     * Contains the minimum and maximum values as strings, which are converted to
-     * their original types when loading the catalog into memory.
-     * Used for persisting the per-column statistics to disk and loading them from
-     * the catalog file.
+     * serialization and deserialization. Contains the minimum and maximum
+     * values as strings, which are converted to their original types when
+     * loading the catalog into memory. Used for persisting the per-column
+     * statistics to disk and loading them from the catalog file.
      */
     private static final class StatsEntry {
+
         public String min;
         public String max;
     }
