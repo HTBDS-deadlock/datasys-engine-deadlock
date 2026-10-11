@@ -38,7 +38,7 @@ public final class StorageEngine {
     // the number of rows in a PAX group, which is a tradeoff between read
     // performance
     // and memory usage
-    private static final int PAX_GROUP_SIZE = 8;
+    private static final int PAX_GROUP_SIZE = 1024;
     // the default maximum number of rows per partition, which is a tradeoff between
     // read
     // performance and memory usage

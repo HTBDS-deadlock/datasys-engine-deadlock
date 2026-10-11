@@ -27,8 +27,7 @@ public final class Engine {
         MDC.put("sessionId", UUID.randomUUID().toString());
         LOGGER.debug("engine started");
 
-        run("SELECT * FROM trips WHERE city = 'Odense';");
-
+        // run("SELECT * FROM trips WHERE city = 'Odense';");
         try {
             String sqlText;
             if (args.length == 2 && args[0].equals("-c")) { // Single SQL input

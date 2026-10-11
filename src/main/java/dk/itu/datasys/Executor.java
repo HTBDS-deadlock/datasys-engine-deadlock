@@ -13,6 +13,7 @@ import org.slf4j.MDC;
  * error.
  */
 public final class Executor {
+
     private static final Logger LOGGER = LoggerFactory.getLogger(Executor.class);
 
     private final StorageEngine engine;

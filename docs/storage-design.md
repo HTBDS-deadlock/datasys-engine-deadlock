@@ -67,10 +67,10 @@ and StorageEngine always reads the catalog before reaching any data file.
 A fresh StorageEngine constructed on an existing data directory reads catalog.json in full and reconstructs in memory: the set of known tables, each table's schema, its data file, its partitions, and each partition's min/max statistics.
 
 ## 5. Layout inside a partition
-We chose PAX because it is the layout used internally by DuckDB, which this project is inspired by, so it seemed like the most natural choice. Rows are stored in small groups, but values within each group are written column-by-column. This gives some of the benefits of a column-oriented layout while still keeping related rows together. In our implementation each partition is divided into mini-groups of 8 rows. The choice of 8 is mainly an implementation decision rather than a performance-tuned parameter. A small fixed group size keeps the code simple and the memory footprint low while still preserving the key idea behind PAX.
+We chose PAX because it is the layout used internally by DuckDB, which this project is inspired by, so it seemed like the most natural choice. Rows are stored in small groups, but values within each group are written column-by-column. This gives some of the benefits of a column-oriented layout while still keeping related rows together. In our implementation each partition is divided into mini-groups of 8 rows. The choice of 1024 is mainly an implementation decision rather than a performance-tuned parameter. A small fixed group size keeps the code simple and the memory footprint low while still preserving the key idea behind PAX.
 
 ## 6. Partition size
-The default partition size is 65,536 rows (64k), but it can be configured when constructing a StorageEngine. Larger partitions reduce the amount of metadata stored in the catalog and avoid creating many small reads. Smaller partitions would give more precise pruning, but would increase catalog size and management overhead. Since we expect datasets used in this project to be relatively small, we chose a larger default size.
+The default partition size is 10000 rows, but it can be configured when constructing a StorageEngine. Larger partitions reduce the amount of metadata stored in the catalog and avoid creating many small reads. Smaller partitions would give more precise pruning, but would increase catalog size and management overhead. Since we expect datasets used in this project to be relatively small, we chose a larger default size.
 
 ## 7. Value encodings and framing
 - `LONG`: 8-byte two's-complement integer.
