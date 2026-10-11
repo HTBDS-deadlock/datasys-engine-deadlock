@@ -3,6 +3,7 @@ package dk.itu.datasys;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,14 +14,22 @@ public final class ScanOperator implements Operator {
     private final StorageEngine engine;
     private final String tableName;
     private final List<Integer> partitionNumbers;
+    // the columns the query uses; null means all columns are read
+    private final Set<String> neededColumns;
     private int nextPartition;
     private Iterator<Object[]> rows = Collections.emptyIterator();
     private int rowsOut;
 
     public ScanOperator(StorageEngine engine, String tableName, List<Integer> partitionNumbers) {
+        this(engine, tableName, partitionNumbers, null);
+    }
+
+    public ScanOperator(StorageEngine engine, String tableName, List<Integer> partitionNumbers,
+            Set<String> neededColumns) {
         this.engine = engine;
         this.tableName = tableName;
         this.partitionNumbers = partitionNumbers;
+        this.neededColumns = neededColumns;
     }
 
     public void open() {
@@ -33,7 +42,7 @@ public final class ScanOperator implements Operator {
         while (!rows.hasNext()) {
             if (nextPartition == partitionNumbers.size())
                 return null;
-            rows = engine.readPartition(tableName, partitionNumbers.get(nextPartition++)).iterator();
+            rows = engine.readPartition(tableName, partitionNumbers.get(nextPartition++), neededColumns).iterator();
         }
 
         rowsOut++;

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -37,6 +38,21 @@ class OperatorTest {
         assertEquals(8, rows.size());
         assertArrayEquals(new Object[] { "Copenhagen", 12L, 23.5 }, rows.get(0));
         assertArrayEquals(new Object[] { "Esbjerg", 299L, 450.25 }, rows.get(7));
+    }
+
+    @Test
+    void scanOperatorSkipsColumnsTheQueryDoesNotUse() {
+        StorageEngine engine = engineWithTripsTable();
+        ScanOperator scan = new ScanOperator(engine, "trips", List.of(0, 1, 2, 3), Set.of("price"));
+
+        scan.open();
+        List<Object[]> rows = drain(scan);
+        scan.close();
+
+        // city (STRING) and distance (LONG) are skipped and left as null
+        assertEquals(8, rows.size());
+        assertArrayEquals(new Object[] { null, null, 23.5 }, rows.get(0));
+        assertArrayEquals(new Object[] { null, null, 450.25 }, rows.get(7));
     }
 
     @Test

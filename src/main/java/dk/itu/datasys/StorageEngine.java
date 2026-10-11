@@ -42,7 +42,7 @@ public final class StorageEngine {
     // the default maximum number of rows per partition, which is a tradeoff between
     // read
     // performance and memory usage
-    private static final int DEFAULT_MAX_ROWS_PER_PARTITION = 10_000;
+    private static final int DEFAULT_MAX_ROWS_PER_PARTITION = 10_240;
 
     // objectmapper used to read and write the catalog json file,
     private static final ObjectMapper MAPPER = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
@@ -398,6 +398,23 @@ public final class StorageEngine {
      * data file
      */
     public List<Object[]> readPartition(String tableName, int partitionNumber) {
+        return readPartition(tableName, partitionNumber, null);
+    }
+
+    /**
+     * Reads a single partition like readPartition(tableName, partitionNumber),
+     * but only decodes the columns in neededColumns. The other columns are
+     * skipped in the data file and left as null in the returned rows, so rows
+     * keep their schema column positions.
+     *
+     * @param tableName
+     * @param partitionNumber index into the table's partition list
+     * @param neededColumns names of the columns to decode, or null for all
+     * columns
+     * @return the rows in the partition, as Object[] arrays in schema column
+     * order
+     */
+    public List<Object[]> readPartition(String tableName, int partitionNumber, Set<String> neededColumns) {
         TableSchema schema = tables.get(tableName);
         if (schema == null) {
             throw new IllegalArgumentException("Unknown table: " + tableName);
@@ -405,17 +422,15 @@ public final class StorageEngine {
         PartitionInfo partition = schema.partitions.get(partitionNumber);
         try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "r")) {
             validateFileHeader(raf);
-            return readPartition(raf, partition, schema.columns);
+            return readPartition(raf, partition, schema.columns, neededColumns);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
 
     /**
-     * Reads a partition of rows from the binary data file in PAX layout. The
-     * method seeks to the byte offset of the partition, reads the rows in
-     * groups of PAX_GROUP_SIZE, and returns a list of rows as Object[] arrays
-     * in schema column order.
+     * Reads a partition of rows from the binary data file in PAX layout,
+     * decoding all columns.
      *
      * @param raf
      * @param partition
@@ -425,6 +440,27 @@ public final class StorageEngine {
      */
     public List<Object[]> readPartition(RandomAccessFile raf, PartitionInfo partition, List<ColumnSpec> columns)
             throws IOException {
+        return readPartition(raf, partition, columns, null);
+    }
+
+    /**
+     * Reads a partition of rows from the binary data file in PAX layout. The
+     * method seeks to the byte offset of the partition, reads the rows in
+     * groups of PAX_GROUP_SIZE, and returns a list of rows as Object[] arrays
+     * in schema column order. Because each group stores its values column by
+     * column, columns that are not in neededColumns are skipped instead of
+     * decoded, and are left as null in the returned rows.
+     *
+     * @param raf
+     * @param partition
+     * @param columns
+     * @param neededColumns names of the columns to decode, or null for all
+     * columns
+     * @return
+     * @throws IOException
+     */
+    public List<Object[]> readPartition(RandomAccessFile raf, PartitionInfo partition, List<ColumnSpec> columns,
+            Set<String> neededColumns) throws IOException {
         // seeks to the byte offset of the partition in the random access file
         raf.seek(partition.byteOffset);
         // initializes an empty list to store the rows read from the partition, and a
@@ -446,6 +482,12 @@ public final class StorageEngine {
             // columnValues array
             for (int c = 0; c < columns.size(); c++) {
                 ColumnType type = columns.get(c).type();
+                // skips the whole column block if the query does not use this column,
+                // leaving its values as null
+                if (neededColumns != null && !neededColumns.contains(columns.get(c).name())) {
+                    skipColumn(raf, type, groupSize);
+                    continue;
+                }
                 for (int r = 0; r < groupSize; r++) {
                     columnValues[c][r] = readValue(raf, type);
                 }
@@ -467,6 +509,29 @@ public final class StorageEngine {
         // returns the list of rows read from the partition, where each row is
         // represented as an Object[] array in schema column order
         return rows;
+    }
+
+    /**
+     * Moves the file pointer past one column block of a PAX group without
+     * decoding the values. LONG and DOUBLE values are fixed at 8 bytes, so the
+     * whole block is skipped in one jump. STRING values have different
+     * lengths, so each length prefix is read to know how far to jump.
+     *
+     * @param raf
+     * @param type
+     * @param groupSize number of values in the column block
+     * @throws IOException
+     */
+    private static void skipColumn(RandomAccessFile raf, ColumnType type, int groupSize) throws IOException {
+        switch (type) {
+            case LONG, DOUBLE -> raf.seek(raf.getFilePointer() + (long) groupSize * 8);
+            case STRING -> {
+                for (int r = 0; r < groupSize; r++) {
+                    int length = raf.readInt();
+                    raf.seek(raf.getFilePointer() + length);
+                }
+            }
+        }
     }
 
     /**
