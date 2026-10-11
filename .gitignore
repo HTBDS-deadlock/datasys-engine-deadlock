@@ -4,4 +4,3 @@ data/
 dependency-reduced-pom.xml
 
 .fake
-src/test/resources/tripz*.csv
