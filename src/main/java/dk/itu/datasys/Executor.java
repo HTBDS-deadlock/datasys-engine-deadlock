@@ -13,6 +13,7 @@ import org.slf4j.MDC;
  * error.
  */
 public final class Executor {
+
     private static final Logger LOGGER = LoggerFactory.getLogger(Executor.class);
 
     private final StorageEngine engine;
@@ -30,13 +31,18 @@ public final class Executor {
     public List<ExecutionResult> run(String sqlText) {
         // Script-level parsing happens before the counter starts, so it keeps
         // the 0 set at engine startup.
+        int statementNumber = 0;
         List<Statement> statements = parser.parse(sqlText);
         List<ExecutionResult> results = new ArrayList<>(statements.size());
-        int statementNumber = 0;
         try {
             for (Statement statement : statements) {
                 MDC.put("statementNumber", String.valueOf(++statementNumber));
-                results.add(execute(statement));
+                try {
+                    results.add(execute(statement));
+                } catch (RuntimeException e) {
+                    LOGGER.error("Statement failed reason ={}", e.getMessage());
+                    throw e;
+                }
             }
         } finally {
             // Puts the 0 back so lines after the script (e.g. engine stopped)

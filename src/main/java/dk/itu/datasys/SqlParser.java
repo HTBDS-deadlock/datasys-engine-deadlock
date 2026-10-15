@@ -2,19 +2,19 @@ package dk.itu.datasys;
 
 import java.util.List;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.sql.sqlLexer;
 import dk.itu.datasys.sql.sqlParser.ScriptContext;
 
 public final class SqlParser {
+
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlParser.class);
 
     private static final BaseErrorListener THROWING_ERROR_LISTENER = new BaseErrorListener() {
@@ -25,7 +25,9 @@ public final class SqlParser {
         }
     };
 
-    /** Parses a whole script of ';'-terminated statements. */
+    /**
+     * Parses a whole script of ';'-terminated statements.
+     */
     public List<Statement> parse(String sqlText) {
         long start = System.currentTimeMillis();
         try {

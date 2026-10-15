@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 public final class Engine {
+
     // our logger, which we can use to log messages to the console and to a file
     private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
 
@@ -27,7 +28,6 @@ public final class Engine {
         LOGGER.debug("engine started");
 
         // run("SELECT * FROM trips WHERE city = 'Odense';");
-
         try {
             String sqlText;
             if (args.length == 2 && args[0].equals("-c")) { // Single SQL input
@@ -105,7 +105,6 @@ public final class Engine {
          * 
          * 
          */
-
     }
 
     String teamName() {
