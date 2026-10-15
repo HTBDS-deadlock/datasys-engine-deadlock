@@ -23,7 +23,8 @@ COPY trips FROM 'src/test/resources/trips.csv';"
 ```
 
 `SELECT` rows are printed to stdout as CSV; logs go to stderr and `logs/engine.log`.
-Data is stored in `./data`; delete it to start over.
+Tables are stored in `./data` and persist between runs; delete it to start over.
+Building without `-DskipTests` runs the tests, which delete `./data`.
 
 ## Tests
 
@@ -31,8 +32,6 @@ Data is stored in `./data`; delete it to start over.
 mvn test      # unit tests
 mvn verify    # unit + integration tests (*IT), as run by CI
 ```
-
-Note: the tests delete `./data`.
 
 ## Conventions
 
