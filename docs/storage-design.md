@@ -7,8 +7,7 @@ mvn package
 ./engine -c "select * from trips where distance < 100"
 > OR 
 
-./engine -c 
-"CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
+./engine -c "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
 COPY trips FROM 'src/test/resources/trips.csv';"
 
 # Test select sql 
@@ -70,7 +69,7 @@ A fresh StorageEngine constructed on an existing data directory reads catalog.js
 We chose PAX because it is the layout used internally by DuckDB, which this project is inspired by, so it seemed like the most natural choice. Rows are stored in small groups, but values within each group are written column-by-column. This gives some of the benefits of a column-oriented layout while still keeping related rows together. In our implementation each partition is divided into mini-groups of 8 rows. The choice of 1024 is mainly an implementation decision rather than a performance-tuned parameter. A small fixed group size keeps the code simple and the memory footprint low while still preserving the key idea behind PAX.
 
 ## 6. Partition size
-The default partition size is 10,240 rows (10 PAX groups of 1,024), but it can be configured when constructing a StorageEngine. Larger partitions reduce the amount of metadata stored in the catalog and avoid creating many small reads. Smaller partitions would give more precise pruning, but would increase catalog size and management overhead. Since we expect datasets used in this project to be relatively small, we chose a larger default size.
+The default partition size is 10000 rows, but it can be configured when constructing a StorageEngine. Larger partitions reduce the amount of metadata stored in the catalog and avoid creating many small reads. Smaller partitions would give more precise pruning, but would increase catalog size and management overhead. Since we expect datasets used in this project to be relatively small, we chose a larger default size.
 
 ## 7. Value encodings and framing
 - `LONG`: 8-byte two's-complement integer.
