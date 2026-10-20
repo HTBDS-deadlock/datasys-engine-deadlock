@@ -1,8 +1,10 @@
 package dk.itu.datasys;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +26,7 @@ public final class Planner {
     public Plan plan(SelectStatement statement) {
         String tableName = statement.tableName();
         Optional<Predicate> filters = statement.filters();
+        Set<String> neededColumns = neededColumns(statement);
 
         Operator root;
         ScanStats stats;
@@ -32,9 +35,15 @@ public final class Planner {
             List<Integer> allPartitions = new ArrayList<>(partitionsTotal);
             for (int p = 0; p < partitionsTotal; p++) {
                 allPartitions.add(p);
+
+                LOGGER.debug("table={}  partition={}  decision={} reason={}", tableName, p, "READ", "noPredicate");
+
             }
-            root = new ScanOperator(engine, tableName, allPartitions);
+            root = new ScanOperator(engine, tableName, allPartitions, neededColumns);
             stats = new ScanStats(partitionsTotal, partitionsTotal, 0);
+
+            // logging
+
         } else {
             Predicate predicate = filters.get(); // columnName()/comparison()/constant().
 
@@ -60,7 +69,7 @@ public final class Planner {
             int partitionsRead = survivingPartitions.size();
             stats = new ScanStats(partitionsTotal, partitionsRead, partitionsTotal - partitionsRead);
 
-            Operator scan = new ScanOperator(engine, tableName, survivingPartitions);
+            Operator scan = new ScanOperator(engine, tableName, survivingPartitions, neededColumns);
             root = new FilterOperator(scan, engine.schema(tableName), predicate);
         }
 
@@ -68,5 +77,16 @@ public final class Planner {
             root = new ProjectOperator(root, engine.schema(tableName), statement.columns().get());
         }
         return new Plan(root, stats);
+    }
+
+    // the columns the scan has to decode: the SELECT columns plus the WHERE
+    // column. Returns null for SELECT *, meaning all columns are read.
+    private static Set<String> neededColumns(SelectStatement statement) {
+        if (statement.columns().isEmpty()) {
+            return null;
+        }
+        Set<String> needed = new HashSet<>(statement.columns().get());
+        statement.filters().ifPresent(predicate -> needed.add(predicate.columnName()));
+        return needed;
     }
 }
