@@ -1,98 +1,88 @@
 # Experiment Design
+## Question and X Axis
+The question is:
 
-## Question and x axis
+"How does the maximum number of rows per partition (DEFAULT_MAX_ROWS_PER_PARTITION) affect the execution time of a selective SELECT query?"
 
-The question is "How does `maxRowsPerPartition` affect the execution time of a
-`SELECT ... WHERE ...` query?"
-Where the independent variable is `maxRowsPerPartition`.
+Which lead us to the hypothesis of: "Having 10,000 maximum rows per partition is faster than both larger and smaller partition sizes"
 
-On the x axis we will have the `maxRowsPerPartition`and the following values will be tested:
+The independent variable is therefore the maximum number of rows per partition.
 
-- 1,000
-- 5,000
-- 10,000
-- 25,000
-- 65,536
+The following partition sizes will be tested:
 
-The value 65,536 is included because it was the first default value in
-the storage engine. The smaller values are included to investigate whether
-reducing the maximum partition size affects query performance.
+7,500 10,000 12,500 15,000 65,000
 
-The x-axis will use a logarithmic scale because the tested values span
-multiple orders of magnitude.
+The value 65,000 is included because it is close to the original default configuration of the storage engine, which was 65,536. The smaller values were selected to investigate the expected optimum range and to determine whether smaller partitions improve partition pruning.
 
-## Metric and y axis
+The x-axis will show the tested partition sizes.
 
-The metric is query execution time, measured using `durationMs` from the
-engine log.
+# Metric and Y Axis
+The metric is query execution time, measured using the durationMs value reported by the engine log for the SELECT statement.
 
-For each value of `maxRowsPerPartition`, the same query will be executed
-6 times.
+For each partition-size configuration, the same query will be executed six times.
 
-The first execution will be treated as a cold run and excluded because
-initial execution may include additional JVM, class-loading, and caching
-overhead.
+The first execution will be discarded as a precaution, leaving five measured runs per configuration.
 
-The median `durationMs` of the remaining 5 executions will be used as
-the measurement for that partition size. Where lower values indicate faster query execution.
+The median durationMs of the remaining five runs will be used as the primary measurement. Lower values indicate better performance. The mean, minimum and maximum execution times will also be recorded.
 
-As mentioned we will have the `maxRowsPerPartition` as rows on a  logarithmic scale on the x axis. On the y axis we will have the median query execution time in milliseconds.
+The x-axis will show rows per partition and the y-axis will show median query execution time in milliseconds.
 
-This means that the results will be shown as one curve. Where each point on the curve represents the median execution time of the same SELECT query for one value of `maxRowsPerPartition`.
+Each point on the graph therefore represents the median execution time of the same query for a particular partition size with whiskers indicating min and max.
 
-## Procedure
+# Dataset
+A dataset will be generated using generate_trips.py with a fixed random seed of 42.
 
-A fixed dataset will be generated using a script with a fixed random
-seed so that every group member can regenerate the same data and
-reproduce the experiment.
+The dataset contains:
 
-The exact same generated dataset will be used for every partition-size
-configuration.
+2,000,000 rows distances between 1 and 1000 km rows sorted by distance
 
-The same table schema, dataset, SELECT query, and WHERE predicate will
-be used for every configuration. Therefore, the variable intentionally
-changed between configurations is `maxRowsPerPartition`.
+The same generated dataset will be used for every partition-size configuration, ensuring that any observed differences are caused by partition size rather than differences in the data.
 
+# Procedure
+The experiment was automated using run_experiment.sh. The script can be executed from the project's root directory using: bash run_experiment.sh
 
-For each value of `maxRowsPerPartition`:
+The same table schema, dataset, query and predicate are used throughout the experiment. The only variable intentionally changed between configurations is DEFAULT_MAX_ROWS_PER_PARTITION.
 
-For each value of `maxRowsPerPartition`:
- 
-1. Create a fresh data directory so that data from a previous
-configuration does not affect the next configuration.
-2. Configure the storage engine with the selected
-`maxRowsPerPartition`.
-3. Create the same table with the same schema.
-4. Load the same generated CSV dataset into the table.
-5. Execute the same `SELECT ... WHERE ...` query 6 times.
-6. Treat the first execution as a cold run and exclude it from the
-timing results.
-7. Record `durationMs` for each execution from the engine log.
-8. Calculate the median `durationMs` of the remaining 5 executions.
-9. Use this median as the measurement for that value of
-`maxRowsPerPartition`.
+For each tested partition size:
 
-The experiment will be run on the same machine for all configurations.
+Modify DEFAULT_MAX_ROWS_PER_PARTITION in StorageEngine.java.
+Rebuild the project using mvn -DskipTests package.
+Delete the existing data directory.
+Recreate the database using ./engine -f q.sql.
+Load the generated dataset into the table.
+Execute
+SELECT * FROM trips WHERE distance < 100;
+six times.
 
-Before taking measurements, we will record:
+Discard the first execution.
 
-- Machine
-- Operating system
-- JVM version
-- JVM heap size
-- Git commit
+Record durationMs for the remaining executions from the engine log.
+
+Compute the median, mean, minimum and maximum execution times.
+
+The order of the tested partition sizes is randomized by the experiment script to reduce systematic bias.
+
+The results of all executions were collected in a results*.csv file stored in the generated directory. The script also produced a summary*.csv file containing the aggregated statistics for each partition size.
+
+In addition, metadata describing the experimental environment, including the Git commit, JVM version and dataset checksum, was collected and written to a meta_.txt file in the generated directory.
+
+# Experimental Environment
+All measurements are collected on the same machine and software environment.
+
+The following information is recorded:
+
+- Machine: Apple M2
+- Memory: 8 GB RAM
+- Operating System: macOS Tahoe 26.6.2
+- JVM: OpenJDK 25.0.4.1
+- JVM heap: Default settings
+- Git commit: 760b207
 
 ## Hypothesis
+Partition pruning uses per-partition minimum and maximum values to decide whether partitions can contain rows satisfying the query predicate.
 
-We expect smaller values of `maxRowsPerPartition` to result in lower
-query execution times than the current default of 65,536 rows per
-partition.
+Smaller partitions generally improve pruning precision because fewer irrelevant rows are contained within each partition. However, smaller partitions also increase the number of partitions that must be managed and stored in the catalog.
 
-Smaller partitions contain fewer rows, which may allow the engine to
-avoid reading as much unnecessary data when executing a selective
-`SELECT ... WHERE ...` query. However, very small partitions also create
-more partitions for the engine to process.
+We therefore expect an intermediate partition size to provide the best performance. In particular, we hypothesize that a partition size around 10,000 rows will achieve a lower median execution time than both the original default value of about 65,000 rows and the neighbouring partition sizes tested in the experiment.
 
-We therefore expect one of the intermediate values, particularly 10,000
-or 25,000 rows per partition, to have a lower median `durationMs` than
-both 1,000 and 65,536 rows per partition.
+Hypothesis: "Having 10,000 maximum rows per partition is faster than both larger and smaller partition sizes"
