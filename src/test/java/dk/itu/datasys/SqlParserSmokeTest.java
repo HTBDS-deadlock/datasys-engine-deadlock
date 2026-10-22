@@ -47,6 +47,22 @@ class SqlParserSmokeTest {
     }
 
     @Test
+    void parsesDeleteWithAndWithoutWhere() {
+        List<Statement> statements = new SqlParser().parse("""
+                DELETE FROM trips WHERE distance > 100;
+                DELETE FROM trips;
+                """);
+
+        DeleteStatement withWhere = (DeleteStatement) statements.get(0);
+        assertEquals("trips", withWhere.tableName());
+        assertEquals(Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)), withWhere.where());
+
+        DeleteStatement withoutWhere = (DeleteStatement) statements.get(1);
+        assertEquals("trips", withoutWhere.tableName());
+        assertTrue(withoutWhere.where().isEmpty());
+    }
+
+    @Test
     void throwsSqlParseExceptionOnSyntaxError() {
         assertThrows(SqlParseException.class, () -> new SqlParser().parse("SELECT FROM;"));
     }

@@ -36,6 +36,15 @@ public class SqlAstBuilder extends sqlBaseVisitor<Statement> {
         return new SelectStatement(tableName, columns, filters);
     }
 
+    @Override
+    public Statement visitDelete(sqlParser.DeleteContext ctx) {
+        String tableName = ctx.IDENTIFIER().getText();
+        Optional<Predicate> where = ctx.predicate() != null
+                ? Optional.of(buildPredicate(ctx.predicate()))
+                : Optional.empty();
+        return new DeleteStatement(tableName, where);
+    }
+
     private Optional<List<String>> buildColumnList(sqlParser.SelectListContext ctx) {
         if (ctx instanceof sqlParser.ColumnListContext columnList) {
             return Optional.of(columnList.IDENTIFIER().stream()

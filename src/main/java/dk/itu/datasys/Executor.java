@@ -63,20 +63,36 @@ public final class Executor {
         Optional<List<Object[]>> rows = switch (statement) {
             case CreateTableStatement s -> {
                 engine.createTable(s.tableName(), s.columns());
-                LOGGER.debug("statement=CREATE_TABLE table={} durationMs={}",
-                        s.tableName(), System.currentTimeMillis() - start);
+                // CREATE TABLE always produces the table's first version, 0
+                LOGGER.debug("statement=CREATE_TABLE table={} version={} durationMs={}",
+                        s.tableName(), 0, System.currentTimeMillis() - start);
                 yield Optional.empty();
             }
             case CopyStatement s -> {
-                engine.copyFile(s.tableName(), s.csvFilePath());
-                LOGGER.debug("statement=COPY table={} durationMs={}",
-                        s.tableName(), System.currentTimeMillis() - start);
+                CopyResult result = engine.copyFile(s.tableName(), s.csvFilePath());
+                LOGGER.debug("statement=COPY table={} rows={} partitions={} version={} durationMs={}",
+                        s.tableName(), result.rows(), result.partitions(), result.version(),
+                        System.currentTimeMillis() - start);
+                yield Optional.empty();
+            }
+            case DeleteStatement s -> {
+                DeleteResult result = engine.delete(s.tableName(), s.where());
+                LOGGER.debug(
+                        "statement=DELETE table={} rowsDeleted={} partitionsRewritten={} partitionsCarried={} version={} durationMs={}",
+                        s.tableName(), result.rowsDeleted(), result.partitionsRewritten(),
+                        result.partitionsCarried(), result.version(), System.currentTimeMillis() - start);
                 yield Optional.empty();
             }
             case SelectStatement s -> {
-                List<Object[]> result = Operator.drain(planner.plan(s).root());
-                LOGGER.debug("statement=SELECT table={} rowsOut={} durationMs={}",
-                        s.tableName(), result.size(), System.currentTimeMillis() - start);
+                // Pinned at statement start, right after binding -- the version this
+                // SELECT reads.
+                int version = engine.currentVersion(s.tableName());
+                Plan plan = planner.plan(s);
+                List<Object[]> result = Operator.drain(plan.root());
+                LOGGER.debug(
+                        "statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
+                        s.tableName(), result.size(), plan.stats().partitionsRead(),
+                        plan.stats().partitionsPruned(), version, System.currentTimeMillis() - start);
                 yield Optional.of(result);
             }
         };

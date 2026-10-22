@@ -22,6 +22,7 @@ public final class Binder {
             case CreateTableStatement stmt -> bindCreateTable(stmt);
             case CopyStatement stmt -> bindCopy(stmt);
             case SelectStatement stmt -> bindSelect(stmt);
+            case DeleteStatement stmt -> bindDelete(stmt);
         }
     }
 
@@ -51,6 +52,15 @@ public final class Binder {
         });
 
         stmt.filters().ifPresent(predicate -> {
+            ColumnSpec column = findColumn(schema, predicate.columnName());
+            StorageEngine.validateConstantType(column.type(), predicate.constant());
+        });
+    }
+
+    private void bindDelete(DeleteStatement stmt) {
+        List<ColumnSpec> schema = engine.schema(stmt.tableName());
+
+        stmt.where().ifPresent(predicate -> {
             ColumnSpec column = findColumn(schema, predicate.columnName());
             StorageEngine.validateConstantType(column.type(), predicate.constant());
         });

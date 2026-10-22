@@ -59,11 +59,15 @@ public final class Engine {
     }
 
     private static void run(String sqlText) {
-        StorageEngine engine = new StorageEngine(Path.of("data"));
-        Executor executor = new Executor(engine);
-
-        for (ExecutionResult result : executor.run(sqlText)) {
-            result.rows().ifPresent(Engine::printCsv);
+        // try-with-resources: engine.close() (one catalog.json write for the whole
+        // session, see docs/transactions-design.md) runs whether the script
+        // finishes normally or a statement fails -- only a real JVM crash loses
+        // what was committed before that.
+        try (StorageEngine engine = new StorageEngine(Path.of("data"))) {
+            Executor executor = new Executor(engine);
+            for (ExecutionResult result : executor.run(sqlText)) {
+                result.rows().ifPresent(Engine::printCsv);
+            }
         }
     }
 

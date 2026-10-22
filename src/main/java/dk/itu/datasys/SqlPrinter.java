@@ -10,6 +10,7 @@ public final class SqlPrinter {
             case CreateTableStatement stmt -> printCreateTable(stmt);
             case CopyStatement stmt -> printCopy(stmt);
             case SelectStatement stmt -> printSelect(stmt);
+            case DeleteStatement stmt -> printDelete(stmt);
         };
     }
 
@@ -31,6 +32,14 @@ public final class SqlPrinter {
         String sql = "SELECT " + columns + " FROM " + stmt.tableName();
         if (stmt.filters().isPresent()) {
             sql += " WHERE " + printPredicate(stmt.filters().get());
+        }
+        return sql + ";";
+    }
+
+    private String printDelete(DeleteStatement stmt) {
+        String sql = "DELETE FROM " + stmt.tableName();
+        if (stmt.where().isPresent()) {
+            sql += " WHERE " + printPredicate(stmt.where().get());
         }
         return sql + ";";
     }
