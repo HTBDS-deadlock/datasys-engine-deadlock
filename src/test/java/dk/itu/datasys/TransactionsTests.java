@@ -1,6 +1,7 @@
 package dk.itu.datasys;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -151,10 +152,36 @@ class TransactionsTests {
             engine.delete("trips", Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
         }
 
-        StorageEngine restarted = new StorageEngine(dir);
-        assertEquals(2, restarted.currentVersion("trips")); // 0 create, 1 copy, 2 delete
-        List<Object[]> rows = restarted.select("trips", "distance", Comparison.GREATER_THAN, -1L);
-        assertEquals(6, rows.size()); // 8 loaded, minus 210 and 299
+        try (StorageEngine restarted = new StorageEngine(dir)) {
+            assertEquals(2, restarted.currentVersion("trips")); // 0 create, 1 copy, 2 delete
+            List<Object[]> rows = restarted.select("trips", "distance", Comparison.GREATER_THAN, -1L);
+            assertEquals(6, rows.size()); // 8 loaded, minus 210 and 299
+            assertEquals(3, restarted.copyFile("trips", csv.toString()).version());
+        }
+
+        try (StorageEngine restartedAgain = new StorageEngine(dir)) {
+            assertEquals(3, restartedAgain.currentVersion("trips"));
+        }
+    }
+
+    @Test
+    void retainedSnapshotReadsItsVersionAfterANewerCommit(@TempDir Path dir) throws IOException {
+        Path csv = writeGoldenCsv(dir);
+        try (StorageEngine engine = new StorageEngine(dir)) {
+            engine.createTable("trips", TRIPS_COLUMNS);
+            engine.copyFile("trips", csv.toString());
+            StorageEngine.TableSnapshot copiedVersion = engine.snapshot("trips", 1);
+
+            engine.delete("trips",
+                    Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
+
+            SelectStatement select = new SelectStatement("trips", Optional.empty(), Optional.empty());
+            new Binder(engine).bind(select, Optional.of(copiedVersion));
+            Plan plan = new Planner(engine).plan(select, copiedVersion);
+            assertEquals(8, Operator.drain(plan.root()).size());
+            assertEquals(6, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+            assertThrows(IllegalArgumentException.class, () -> engine.snapshot("trips", 99));
+        }
     }
 
     // ------------------------------------------------------------------

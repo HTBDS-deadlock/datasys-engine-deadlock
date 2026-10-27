@@ -17,6 +17,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentNavigableMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,7 +60,9 @@ public final class StorageEngine implements AutoCloseable {
     private final Path dataDirectory;
     private final Path catalogPath;
     private final int maxRowsPerPartition;
-    private final Map<String, TableSchema> tables = new LinkedHashMap<>();
+    private final Map<String, TableSchema> tables = new ConcurrentHashMap<>();
+    private final Map<String, ConcurrentNavigableMap<Integer, TableSchema>> versionHistory =
+            new ConcurrentHashMap<>();
     private ScanStats lastScanStats;
 
     // StorageEngine constructor, which takes a data directory and an optional
@@ -158,7 +163,7 @@ public final class StorageEngine implements AutoCloseable {
         schema.dataFile = null;
         schema.partitions = new ArrayList<>();
         schema.version = 0;
-        tables.put(tableName, schema);
+        publishSchema(tableName, schema);
 
         // logs the creation of the table with the table name and the number of columns
         // in the table
@@ -187,13 +192,15 @@ public final class StorageEngine implements AutoCloseable {
      *
      */
     public CopyResult copyFile(String tableName, String csvFilePath) {
+        return copyFile(snapshot(tableName), csvFilePath);
+    }
+
+    public CopyResult copyFile(TableSnapshot snapshot, String csvFilePath) {
         ensureSession();
+        String tableName = snapshot.tableName;
         // gets the schema of the specified table, and throws an exception if the table
         // does not exist
-        TableSchema schema = tables.get(tableName);
-        if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
-        }
+        TableSchema schema = snapshot.schema;
 
         // start a timer to measure the duration of the copy operation
         // a table with no data yet gets a fresh file with a header; a table that
@@ -264,7 +271,7 @@ public final class StorageEngine implements AutoCloseable {
         updated.dataFile = dataFileName;
         updated.partitions = allPartitions;
         updated.version = schema.version + 1;
-        tables.put(tableName, updated);
+        publishSchema(tableName, updated);
 
         // logs the completion of the copy operation with the table name, CSV file name,
         // total number of rows copied, number of partitions created,
@@ -371,16 +378,17 @@ public final class StorageEngine implements AutoCloseable {
         // refactor).
         SelectStatement statement = new SelectStatement(tableName, Optional.empty(),
                 Optional.of(new Predicate(columnName, comparison, constant)));
-        new Binder(this).bind(statement);
+        TableSnapshot snapshot = snapshot(tableName);
+        new Binder(this).bind(statement, Optional.of(snapshot));
 
         // Pinned at statement start, right after binding -- the version this
         // SELECT reads, logged below.
-        int version = currentVersion(tableName);
+        int version = snapshot.version();
 
         // Plans the statement (this is where partition pruning now happens, see
         // Planner) and drains the resulting operator pipeline into a row list.
         long start = System.currentTimeMillis();
-        Plan plan = new Planner(this).plan(statement);
+        Plan plan = new Planner(this).plan(statement, snapshot);
         // Plan: which tree, what to read, which algorithm, which order, how much
         List<Object[]> results = Operator.drain(plan.root());
         lastScanStats = plan.stats();
@@ -424,11 +432,13 @@ public final class StorageEngine implements AutoCloseable {
      * @throws IllegalArgumentException if the table is unknown
      */
     public DeleteResult delete(String tableName, Optional<Predicate> predicate) {
+        return delete(snapshot(tableName), predicate);
+    }
+
+    public DeleteResult delete(TableSnapshot snapshot, Optional<Predicate> predicate) {
         ensureSession();
-        TableSchema schema = tables.get(tableName);
-        if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
-        }
+        String tableName = snapshot.tableName;
+        TableSchema schema = snapshot.schema;
 
         // one decision per partition: either it is carried over unchanged, or it
         // is rewritten and carries the rows that survive the predicate
@@ -501,7 +511,7 @@ public final class StorageEngine implements AutoCloseable {
             updated.dataFile = schema.dataFile;
             updated.partitions = newPartitions;
             updated.version = schema.version + 1;
-            tables.put(tableName, updated);
+            publishSchema(tableName, updated);
             version = updated.version;
         }
 
@@ -549,9 +559,13 @@ public final class StorageEngine implements AutoCloseable {
      * order
      */
     public List<Object[]> readPartition(String tableName, int partitionNumber, Set<String> neededColumns) {
-        TableSchema schema = tables.get(tableName);
+        return readPartition(snapshot(tableName), partitionNumber, neededColumns);
+    }
+
+    public List<Object[]> readPartition(TableSnapshot snapshot, int partitionNumber, Set<String> neededColumns) {
+        TableSchema schema = snapshot.schema;
         if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
+            throw new IllegalArgumentException("Unknown table: " + snapshot.tableName);
         }
         PartitionInfo partition = schema.partitions.get(partitionNumber);
         try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "r")) {
@@ -752,11 +766,40 @@ public final class StorageEngine implements AutoCloseable {
      * unknown.
      */
     public List<ColumnSpec> schema(String tableName) {
+        return schema(snapshot(tableName));
+    }
+
+    public List<ColumnSpec> schema(TableSnapshot snapshot) {
+        return List.copyOf(snapshot.schema.columns);
+    }
+
+    public TableSnapshot snapshot(String tableName) {
         TableSchema schema = tables.get(tableName);
         if (schema == null) {
             throw new IllegalArgumentException("Unknown table: " + tableName);
         }
-        return List.copyOf(schema.columns);
+        return new TableSnapshot(tableName, schema);
+    }
+
+    public Optional<TableSnapshot> snapshotIfPresent(String tableName) {
+        TableSchema schema = tables.get(tableName);
+        return schema == null ? Optional.empty() : Optional.of(new TableSnapshot(tableName, schema));
+    }
+
+    public TableSnapshot snapshot(String tableName, int version) {
+        ConcurrentNavigableMap<Integer, TableSchema> history = versionHistory.get(tableName);
+        if (history == null) {
+            throw new IllegalArgumentException("Unknown table: " + tableName);
+        }
+        TableSchema current = tables.get(tableName);
+        if (current == null || version > current.version) {
+            throw new IllegalArgumentException("Unknown version " + version + " for table: " + tableName);
+        }
+        TableSchema schema = history.get(version);
+        if (schema == null) {
+            throw new IllegalArgumentException("Unknown version " + version + " for table: " + tableName);
+        }
+        return new TableSnapshot(tableName, schema);
     }
 
     /**
@@ -764,22 +807,18 @@ public final class StorageEngine implements AutoCloseable {
      * unknown.
      */
     public int currentVersion(String tableName) {
-        TableSchema schema = tables.get(tableName);
-        if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
-        }
-        return schema.version;
+        return snapshot(tableName).version();
     }
 
     /**
      * The table's partition count. Throws IllegalArgumentException if unknown.
      */
     public int partitionCount(String tableName) {
-        TableSchema schema = tables.get(tableName);
-        if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
-        }
-        return schema.partitions.size();
+        return partitionCount(snapshot(tableName));
+    }
+
+    public int partitionCount(TableSnapshot snapshot) {
+        return snapshot.schema.partitions.size();
     }
 
     /**
@@ -788,10 +827,11 @@ public final class StorageEngine implements AutoCloseable {
      * decide which partitions can be pruned without opening the data file.
      */
     public List<Object[]> columnStats(String tableName, String columnName) {
-        TableSchema schema = tables.get(tableName);
-        if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
-        }
+        return columnStats(snapshot(tableName), columnName);
+    }
+
+    public List<Object[]> columnStats(TableSnapshot snapshot, String columnName) {
+        TableSchema schema = snapshot.schema;
         // stats list starter empty [] men med samme size som antal partitions.
         List<Object[]> stats = new ArrayList<>(schema.partitions.size());
         for (PartitionInfo partition : schema.partitions) {
@@ -801,6 +841,12 @@ public final class StorageEngine implements AutoCloseable {
         }
         // return stats giver den færdige liste: [[12,31],[88,95],[140,187],[210,299]]
         return stats;
+    }
+
+    private void publishSchema(String tableName, TableSchema schema) {
+        versionHistory.computeIfAbsent(tableName, ignored -> new ConcurrentSkipListMap<>())
+                .put(schema.version, schema);
+        tables.put(tableName, schema);
     }
 
     // ------------------------------------------------------------------
@@ -1058,7 +1104,7 @@ public final class StorageEngine implements AutoCloseable {
         try {
             CatalogFile catalogFile = MAPPER.readValue(catalogPath.toFile(), CatalogFile.class);
             for (Map.Entry<String, TableEntry> entry : catalogFile.tables.entrySet()) {
-                tables.put(entry.getKey(), toSchema(entry.getValue()));
+                publishSchema(entry.getKey(), toSchema(entry.getValue()));
             }
         } catch (IOException e) {
             LOGGER.error("Error loadCatalog mapper");
@@ -1246,6 +1292,27 @@ public final class StorageEngine implements AutoCloseable {
     // ------------------------------------------------------------------
     // In-memory model
     // ------------------------------------------------------------------
+    /**
+     * A stable reference to one committed table schema for a statement.
+     */
+    public static final class TableSnapshot {
+        private final String tableName;
+        private final TableSchema schema;
+
+        private TableSnapshot(String tableName, TableSchema schema) {
+            this.tableName = tableName;
+            this.schema = schema;
+        }
+
+        public String tableName() {
+            return tableName;
+        }
+
+        public int version() {
+            return schema.version;
+        }
+    }
+
     /**
      * Represents the schema of a table, including its columns, data file name,
      * and partition information. Used in-memory to manage the structure and

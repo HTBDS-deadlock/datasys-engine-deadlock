@@ -7,35 +7,40 @@ Part 1 rationale this builds on.
 ## 1. Versioning
 
 Each table's `TableSchema` carries its own `version` field (an int), incremented by one on every
-committed `COPY` or `DELETE` against that table. The counter lives entirely **in memory** for the
-duration of the session — no `catalog.json` write happens on each commit.
+committed `COPY` or `DELETE` against that table. The current version is persisted in `catalog.json`
+at engine close, so a later `./engine` invocation continues the table's version number; merely
+starting a new process does not increment it. During one invocation, intermediate versions live
+entirely **in memory** — no `catalog.json` write happens on each commit.
 
-Concretely: `StorageEngine` keeps its existing `Map<String, TableSchema> tables` as the
-"current version" pointer (unchanged for existing callers), plus a new
-`Map<String, NavigableMap<Integer, TableSchema>> versionHistory` that every commit also writes into,
-keyed by table name and then version number.
+Concretely: `StorageEngine` keeps a concurrent `Map<String, TableSchema> tables` as the current
+version pointer, plus a concurrent `Map<String, ConcurrentNavigableMap<Integer, TableSchema>>
+versionHistory`. On startup, the persisted current version is loaded into both maps. Each commit
+adds its immutable schema snapshot to the history and then publishes it as the current entry in
+`tables`. A snapshot is a reference to one `TableSchema`, whose partition metadata is not mutated
+after publication.
 
 This is deliberately the cheapest, riskiest of the three options the exercise lists ("metadata held
-in memory only, flushed when the engine exits"). We accept that tradeoff because `./engine` is not a
-long-running daemon: every invocation (`-c` or `-f`) is its own JVM process that starts, does its
-work, and exits — so "flush on close" already happens at the end of every single invocation, not
-only once at the end of some long session. The real risk window is narrower than it first sounds:
-it is confined to a single `-f script.sql` call that contains multiple statements. If the JVM dies
-between statement 3 and statement 10 of one script, the in-memory-only effects of statements 1-9 are
-lost even though each individually succeeded. We accept this as a scope limitation of this exercise.
+in memory only, flushed when the engine exits"). Each `./engine -c ...` or `./engine -f ...`
+invocation is one process/run; its intermediate version history is discarded at exit, while the
+latest version remains persisted for the next run. If the process crashes before close, catalog
+changes from that invocation are lost, although any already-appended partition bytes are harmless
+orphans. This is an accepted scope limitation of this exercise.
 
-`createTable` and `copyFile` keep all of their existing logic unchanged (building the in-memory
-`TableSchema`, writing partition bytes to the data file) — only the `saveCatalog()` call currently
-made *inside* each of them is removed. In its place, `StorageEngine` gets one new public `close()`
-method (the class implements `AutoCloseable`) that performs the single `catalog.json` write for the
-session. `Engine.main` calls it once, after the last statement has run, in the same place its
-`finally` block already sits.
+The concurrent maps make current-version publication and version lookup safe for concurrent readers.
+Concurrent-writer conflict detection is deferred to Exercise 8; this design does not promise that two
+simultaneous writers can both commit from the same base version.
+
+`createTable`, `copyFile`, and `delete` build and publish in-memory `TableSchema` versions without
+writing `catalog.json` per statement. `StorageEngine.close()` performs the single catalog write for
+the invocation. `Engine.run` calls it after the last statement through try-with-resources, including
+when a statement fails.
 
 ## 2. Commit
 
-**In-JVM atomicity**: committing a version is a single reference swap — the table's entry in `tables`
-is reassigned to the newly built `TableSchema` in one map `put`. Under our no-concurrency assumption,
-no reader can observe a half-updated table.
+**In-JVM atomicity**: committing a version first records the completed schema in version history,
+then publishes it as the current version by replacing the table's entry in `tables` in one map `put`.
+A reader that captures the current entry sees either the prior or new schema, not a partially updated
+schema.
 
 **On-disk atomicity**: deferred to engine close (see §1). At that point, every table's current
 (highest-version) `TableSchema` is serialized and written to a new temporary file, which is then
@@ -45,23 +50,24 @@ write, even though it is the only disk write of the session.
 
 ## 3. Snapshot
 
-A statement pins the table's last committed version **at statement start** — inside
-`Executor.execute(statement)`, before `binder.bind(statement)` is even called — not when its `Plan` is
-built. `Executor` captures a reference to the table's current `TableSchema` at that point and threads
-it through `Binder`/`Planner`, rather than `Planner` re-querying the live `StorageEngine` map multiple
-times during planning as it does today. Under our current no-concurrency model this has no observable
-effect yet, but it establishes the correct pin point once concurrent statements exist.
+A statement that targets an existing table pins its last committed `TableSchema` **at statement
+start** — inside `Executor.execute(statement)`, before `binder.bind(statement)` is called. The
+snapshot reference is passed through binding and execution. For `SELECT`, `Planner` uses only this
+snapshot for schema, statistics, and partition selection, and each scan reads partitions from the
+same snapshot rather than looking the table up again in the live map. `COPY` and `DELETE` also build
+from the pinned schema. `CREATE TABLE` has no prior table version to pin.
 
 ## 4. Retention
 
-Every version created during a session is kept in memory for the session's whole lifetime, in
-`versionHistory` (§1). Nothing is evicted mid-session; only the single newest version per table is
-ever persisted to disk, at close (§1, §2). We accept the resulting memory growth as a scope
-limitation of this exercise rather than designing reference counting or a running-statement list — a
-more correct but more involved solution we are deliberately deferring.
+Every version created during one engine invocation is kept in memory for that invocation's whole
+lifetime, in `versionHistory` (§1). Nothing is evicted mid-run; only the single newest version per
+table is persisted to disk at close (§1, §2). Old snapshots from earlier invocations are not
+available after restart; startup seeds history with the latest persisted version. Retaining every
+version in memory through process exit avoids reference counting or tracking active statements,
+because no statement from that process can outlive it.
 
-If something requests a version number that was never created, the engine throws an error rather than
-silently returning the nearest available version.
+If something requests a version number that is not retained in the current invocation, the engine
+throws an error rather than silently returning the nearest available version.
 
 ## 5. The rewrite set
 
