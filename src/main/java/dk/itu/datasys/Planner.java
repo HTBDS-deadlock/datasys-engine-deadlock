@@ -24,14 +24,18 @@ public final class Planner {
     }
 
     public Plan plan(SelectStatement statement) {
-        String tableName = statement.tableName();
+        return plan(statement, engine.snapshot(statement.tableName()));
+    }
+
+    public Plan plan(SelectStatement statement, StorageEngine.TableSnapshot snapshot) {
+        String tableName = snapshot.tableName();
         Optional<Predicate> filters = statement.filters();
         Set<String> neededColumns = neededColumns(statement);
 
         Operator root;
         ScanStats stats;
         if (filters.isEmpty()) {
-            int partitionsTotal = engine.partitionCount(tableName);
+            int partitionsTotal = engine.partitionCount(snapshot);
             List<Integer> allPartitions = new ArrayList<>(partitionsTotal);
             for (int p = 0; p < partitionsTotal; p++) {
                 allPartitions.add(p);
@@ -39,7 +43,7 @@ public final class Planner {
                 LOGGER.debug("table={}  partition={}  decision={} reason={}", tableName, p, "READ", "noPredicate");
 
             }
-            root = new ScanOperator(engine, tableName, allPartitions, neededColumns);
+            root = new ScanOperator(engine, snapshot, allPartitions, neededColumns);
             stats = new ScanStats(partitionsTotal, partitionsTotal, 0);
 
             // logging
@@ -49,7 +53,7 @@ public final class Planner {
 
             // columnStats giver den færdige liste af min max på fx distance:
             // [[12,31],[88,95],[140,187],[210,299]].
-            List<Object[]> columnStats = engine.columnStats(tableName, predicate.columnName());
+            List<Object[]> columnStats = engine.columnStats(snapshot, predicate.columnName());
             List<Integer> survivingPartitions = new ArrayList<>();
             // next we need to prune so we only get the right partitons and loop on the size
             // of column stat size.
@@ -69,12 +73,12 @@ public final class Planner {
             int partitionsRead = survivingPartitions.size();
             stats = new ScanStats(partitionsTotal, partitionsRead, partitionsTotal - partitionsRead);
 
-            Operator scan = new ScanOperator(engine, tableName, survivingPartitions, neededColumns);
-            root = new FilterOperator(scan, engine.schema(tableName), predicate);
+            Operator scan = new ScanOperator(engine, snapshot, survivingPartitions, neededColumns);
+            root = new FilterOperator(scan, engine.schema(snapshot), predicate);
         }
 
         if (statement.columns().isPresent()) {
-            root = new ProjectOperator(root, engine.schema(tableName), statement.columns().get());
+            root = new ProjectOperator(root, engine.schema(snapshot), statement.columns().get());
         }
         return new Plan(root, stats);
     }

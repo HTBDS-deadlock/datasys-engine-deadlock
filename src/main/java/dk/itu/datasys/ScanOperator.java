@@ -12,6 +12,7 @@ public final class ScanOperator implements Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(ScanOperator.class);
 
     private final StorageEngine engine;
+    private final StorageEngine.TableSnapshot snapshot;
     private final String tableName;
     private final List<Integer> partitionNumbers;
     // the columns the query uses; null means all columns are read
@@ -27,7 +28,17 @@ public final class ScanOperator implements Operator {
     public ScanOperator(StorageEngine engine, String tableName, List<Integer> partitionNumbers,
             Set<String> neededColumns) {
         this.engine = engine;
+        this.snapshot = partitionNumbers.isEmpty() ? null : engine.snapshot(tableName);
         this.tableName = tableName;
+        this.partitionNumbers = partitionNumbers;
+        this.neededColumns = neededColumns;
+    }
+
+    public ScanOperator(StorageEngine engine, StorageEngine.TableSnapshot snapshot,
+            List<Integer> partitionNumbers, Set<String> neededColumns) {
+        this.engine = engine;
+        this.snapshot = snapshot;
+        this.tableName = snapshot.tableName();
         this.partitionNumbers = partitionNumbers;
         this.neededColumns = neededColumns;
     }
@@ -42,7 +53,7 @@ public final class ScanOperator implements Operator {
         while (!rows.hasNext()) {
             if (nextPartition == partitionNumbers.size())
                 return null;
-            rows = engine.readPartition(tableName, partitionNumbers.get(nextPartition++), neededColumns).iterator();
+            rows = engine.readPartition(snapshot, partitionNumbers.get(nextPartition++), neededColumns).iterator();
         }
 
         rowsOut++;

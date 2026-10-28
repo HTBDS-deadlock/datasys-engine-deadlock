@@ -82,6 +82,17 @@ class SqlPrinterTest {
                 Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L))));
     }
 
+    @Test
+    void roundTrips_deleteWithoutWhere() {
+        assertRoundTrips(new DeleteStatement("trips", Optional.empty()));
+    }
+
+    @Test
+    void roundTrips_deleteWithPredicate() {
+        assertRoundTrips(new DeleteStatement("trips",
+                Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L))));
+    }
+
     /** The parse(print(s)) round-trip property, for a single statement. */
     private void assertRoundTrips(Statement statement) {
         String printed = printer.print(statement);

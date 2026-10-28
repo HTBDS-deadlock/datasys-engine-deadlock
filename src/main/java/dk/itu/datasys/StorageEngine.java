@@ -8,6 +8,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -16,6 +17,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentNavigableMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +33,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
  * partitions, per-column min/max) plus one PAX-laid-out data file per table.
  * See docs/storage-design.md for the rationale behind each choice below.
  */
-public final class StorageEngine {
+public final class StorageEngine implements AutoCloseable {
 
     // our logger, which we can use to log messages to the console and to a file
     private static final Logger LOGGER = LoggerFactory.getLogger(StorageEngine.class);
@@ -56,7 +60,9 @@ public final class StorageEngine {
     private final Path dataDirectory;
     private final Path catalogPath;
     private final int maxRowsPerPartition;
-    private final Map<String, TableSchema> tables = new LinkedHashMap<>();
+    private final Map<String, TableSchema> tables = new ConcurrentHashMap<>();
+    private final Map<String, ConcurrentNavigableMap<Integer, TableSchema>> versionHistory =
+            new ConcurrentHashMap<>();
     private ScanStats lastScanStats;
 
     // StorageEngine constructor, which takes a data directory and an optional
@@ -156,8 +162,8 @@ public final class StorageEngine {
         schema.columns = List.copyOf(columns);
         schema.dataFile = null;
         schema.partitions = new ArrayList<>();
-        tables.put(tableName, schema);
-        saveCatalog();
+        schema.version = 0;
+        publishSchema(tableName, schema);
 
         // logs the creation of the table with the table name and the number of columns
         // in the table
@@ -178,45 +184,51 @@ public final class StorageEngine {
      *
      * @param tableName
      * @param csvFilePath
+     * @return rows copied, partitions created by this call, and the resulting
+     * version
      * @throws IllegalArgumentException if the line whose field count does not
      * match the number of columns in the table (happens in parseLine)
      * @throws IllegalArgumentException if the table does not exist
-     * @throws UnsupportedOperationException if the table already has data
      *
      */
-    public void copyFile(String tableName, String csvFilePath) {
+    public CopyResult copyFile(String tableName, String csvFilePath) {
+        return copyFile(snapshot(tableName), csvFilePath);
+    }
+
+    public CopyResult copyFile(TableSnapshot snapshot, String csvFilePath) {
         ensureSession();
+        String tableName = snapshot.tableName;
         // gets the schema of the specified table, and throws an exception if the table
-        // does not exist or already has data
-        TableSchema schema = tables.get(tableName);
-        if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
-        }
-        if (schema.dataFile != null) {
-            throw new UnsupportedOperationException(
-                    "Table already has data, appending is not supported yet: " + tableName);
-        }
+        // does not exist
+        TableSchema schema = snapshot.schema;
 
         // start a timer to measure the duration of the copy operation
-        // constructs the path to the binary data file for the table, which is named
-        // after the table with a .bin extension
+        // a table with no data yet gets a fresh file with a header; a table that
+        // already has data keeps its existing file and the new partitions are
+        // simply appended after the existing ones (no restriction on repeated COPY)
         long start = System.currentTimeMillis();
-        String dataFileName = tableName + ".bin";
+        boolean isNewFile = schema.dataFile == null;
+        String dataFileName = isNewFile ? tableName + ".bin" : schema.dataFile;
         Path dataFilePath = dataDirectory.resolve(dataFileName);
 
-        // initializes an empty list of partitions and a counter for the total number of
-        // rows
-        List<PartitionInfo> partitions = new ArrayList<>();
+        // initializes an empty list of the partitions this call creates, a counter for
+        // the total number of rows, and the partition index to continue numbering from
+        List<PartitionInfo> newPartitions = new ArrayList<>();
         int totalRows = 0;
+        int nextPartitionIndex = schema.partitions.size();
 
-        // opens the binary data file for writing and the CSV file for reading, and
-        // writes the
-        // magic number and format version to the binary data file
+        // opens the binary data file for writing and the CSV file for reading
         try (RandomAccessFile raf = new RandomAccessFile(dataFilePath.toFile(), "rw"); BufferedReader reader = Files.newBufferedReader(Path.of(csvFilePath), StandardCharsets.UTF_8)) {
 
-            raf.setLength(0);
-            raf.write(MAGIC);
-            raf.writeInt(FORMAT_VERSION);
+            if (isNewFile) {
+                raf.setLength(0);
+                raf.write(MAGIC);
+                raf.writeInt(FORMAT_VERSION);
+            } else {
+                // append after the existing partitions; the header was already written
+                // once, when the file was first created
+                raf.seek(raf.length());
+            }
 
             // reads the CSV file line by line, parsing each line with the function
             // parseLine into a row of data according
@@ -235,32 +247,40 @@ public final class StorageEngine {
                 batch.add(row);
                 totalRows++;
                 if (batch.size() == maxRowsPerPartition) {
-                    partitions.add(writePartition(raf, schema.columns, batch, tableName, partitions.size()));
+                    newPartitions.add(writePartition(raf, schema.columns, batch, tableName, nextPartitionIndex++));
                     batch.clear();
                 }
             }
 
             // say partition size is 10.000 and there is only 8_000 let then the reiaming goes in last partition
             if (!batch.isEmpty()) {
-                partitions.add(writePartition(raf, schema.columns, batch, tableName, partitions.size()));
+                newPartitions.add(writePartition(raf, schema.columns, batch, tableName, nextPartitionIndex++));
             }
         } catch (IOException e) {
             LOGGER.error("Error copyFile");
             throw new UncheckedIOException(e);
         }
 
-        // updates the table schema with the new data file and partition information,
-        // and saves the catalog to the catalog file
-        schema.dataFile = dataFileName;
-        schema.partitions = partitions;
-        saveCatalog();
+        // commits a new TableSchema version: the existing partitions plus the ones
+        // this call just wrote, in one reference swap into `tables`
+        List<PartitionInfo> allPartitions = new ArrayList<>(schema.partitions);
+        allPartitions.addAll(newPartitions);
+
+        TableSchema updated = new TableSchema();
+        updated.columns = schema.columns;
+        updated.dataFile = dataFileName;
+        updated.partitions = allPartitions;
+        updated.version = schema.version + 1;
+        publishSchema(tableName, updated);
 
         // logs the completion of the copy operation with the table name, CSV file name,
         // total number of rows copied, number of partitions created,
         // and the duration of the operation in milliseconds
         long durationMs = System.currentTimeMillis() - start;
         LOGGER.debug("table={} file={} rows={} partitions={} durationMs={}",
-                tableName, Path.of(csvFilePath).getFileName(), totalRows, partitions.size(), durationMs);
+                tableName, Path.of(csvFilePath).getFileName(), totalRows, newPartitions.size(), durationMs);
+
+        return new CopyResult(totalRows, newPartitions.size(), updated.version);
     }
 
     /**
@@ -358,21 +378,26 @@ public final class StorageEngine {
         // refactor).
         SelectStatement statement = new SelectStatement(tableName, Optional.empty(),
                 Optional.of(new Predicate(columnName, comparison, constant)));
-        new Binder(this).bind(statement);
+        TableSnapshot snapshot = snapshot(tableName);
+        new Binder(this).bind(statement, Optional.of(snapshot));
+
+        // Pinned at statement start, right after binding -- the version this
+        // SELECT reads, logged below.
+        int version = snapshot.version();
 
         // Plans the statement (this is where partition pruning now happens, see
         // Planner) and drains the resulting operator pipeline into a row list.
         long start = System.currentTimeMillis();
-        Plan plan = new Planner(this).plan(statement);
+        Plan plan = new Planner(this).plan(statement, snapshot);
         // Plan: which tree, what to read, which algorithm, which order, how much
         List<Object[]> results = Operator.drain(plan.root());
         lastScanStats = plan.stats();
 
         long durationMs = System.currentTimeMillis() - start;
         LOGGER.debug(
-                "table={} column={} comparison={} const={} partitionsRead={} partitionsPruned={} rowsOut={} durationMs={}",
+                "table={} column={} comparison={} const={} partitionsRead={} partitionsPruned={} rowsOut={} version={} durationMs={}",
                 tableName, columnName, comparison, constant, plan.stats().partitionsRead(),
-                plan.stats().partitionsPruned(), results.size(), durationMs);
+                plan.stats().partitionsPruned(), results.size(), version, durationMs);
 
         return results;
     }
@@ -381,6 +406,125 @@ public final class StorageEngine {
     // reflects the last select operations scan stats as
     ScanStats lastScanStats() {
         return lastScanStats;
+    }
+
+    // ------------------------------------------------------------------
+    // delete
+    // ------------------------------------------------------------------
+    /**
+     * Deletes rows from the specified table that match the optional predicate,
+     * by copy-on-write. The rewrite set is computed with the same helper the
+     * planner prunes with, in the opposite role: a partition canPrune rules out
+     * cannot contain a match and is carried over by reference, unread. Every
+     * other partition is read; if it turns out to have no real match either
+     * (pruning is conservative, so this can happen), it is also carried over
+     * unchanged. Only a partition with at least one row that actually matches
+     * is physically rewritten: the surviving rows are written into a new
+     * partition, appended to the table's existing data file. Originals are
+     * never modified. A new version is committed only if at least one row was
+     * actually deleted.
+     *
+     * @param tableName
+     * @param predicate empty means every row matches (DELETE FROM table with no
+     * WHERE)
+     * @return rows deleted, partitions physically rewritten, partitions carried
+     * over unchanged, and the resulting version
+     * @throws IllegalArgumentException if the table is unknown
+     */
+    public DeleteResult delete(String tableName, Optional<Predicate> predicate) {
+        return delete(snapshot(tableName), predicate);
+    }
+
+    public DeleteResult delete(TableSnapshot snapshot, Optional<Predicate> predicate) {
+        ensureSession();
+        String tableName = snapshot.tableName;
+        TableSchema schema = snapshot.schema;
+
+        // one decision per partition: either it is carried over unchanged, or it
+        // is rewritten and carries the rows that survive the predicate
+        record Decision(PartitionInfo carried, List<Object[]> rewrite) {
+        }
+        List<Decision> decisions = new ArrayList<>();
+        int rowsDeleted = 0;
+
+        if (schema.dataFile != null) {
+            int columnIndex = predicate.map(p -> columnIndex(schema.columns, p.columnName())).orElse(-1);
+            try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "r")) {
+                validateFileHeader(raf);
+                for (PartitionInfo partition : schema.partitions) {
+                    boolean mayMatch = predicate.isEmpty() || !canPrune(predicate.get().comparison(),
+                            predicate.get().constant(),
+                            partition.stats.get(predicate.get().columnName())[0],
+                            partition.stats.get(predicate.get().columnName())[1]);
+                    if (!mayMatch) {
+                        decisions.add(new Decision(partition, null));
+                        continue;
+                    }
+
+                    List<Object[]> rows = readPartition(raf, partition, schema.columns);
+                    List<Object[]> surviving = new ArrayList<>(rows.size());
+                    for (Object[] row : rows) {
+                        boolean isMatch = predicate.isEmpty()
+                                || matches(row[columnIndex], predicate.get().comparison(), predicate.get().constant());
+                        if (isMatch) {
+                            rowsDeleted++;
+                        } else {
+                            surviving.add(row);
+                        }
+                    }
+
+                    // nothing in this partition actually matched -- carry it over as-is
+                    decisions.add(surviving.size() == rows.size()
+                            ? new Decision(partition, null)
+                            : new Decision(null, surviving));
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+
+        int partitionsCarried = (int) decisions.stream().filter(d -> d.carried() != null).count();
+        int partitionsRewritten = decisions.size() - partitionsCarried;
+
+        int version = schema.version;
+        if (partitionsRewritten > 0) {
+            List<PartitionInfo> newPartitions = new ArrayList<>(decisions.size());
+            try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "rw")) {
+                raf.seek(raf.length());
+                int nextPartitionIndex = schema.partitions.size();
+                for (Decision d : decisions) {
+                    if (d.carried() != null) {
+                        newPartitions.add(d.carried());
+                    } else if (!d.rewrite().isEmpty()) {
+                        newPartitions.add(writePartition(raf, schema.columns, d.rewrite(), tableName,
+                                nextPartitionIndex++));
+                    }
+                    // d.rewrite().isEmpty(): every row in this partition was deleted, so the
+                    // partition is simply dropped from the new version
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+
+            TableSchema updated = new TableSchema();
+            updated.columns = schema.columns;
+            updated.dataFile = schema.dataFile;
+            updated.partitions = newPartitions;
+            updated.version = schema.version + 1;
+            publishSchema(tableName, updated);
+            version = updated.version;
+        }
+
+        return new DeleteResult(rowsDeleted, partitionsRewritten, partitionsCarried, version);
+    }
+
+    private static int columnIndex(List<ColumnSpec> columns, String name) {
+        for (int i = 0; i < columns.size(); i++) {
+            if (columns.get(i).name().equals(name)) {
+                return i;
+            }
+        }
+        throw new IllegalStateException("Unknown column: " + name);
     }
 
     /**
@@ -415,9 +559,13 @@ public final class StorageEngine {
      * order
      */
     public List<Object[]> readPartition(String tableName, int partitionNumber, Set<String> neededColumns) {
-        TableSchema schema = tables.get(tableName);
+        return readPartition(snapshot(tableName), partitionNumber, neededColumns);
+    }
+
+    public List<Object[]> readPartition(TableSnapshot snapshot, int partitionNumber, Set<String> neededColumns) {
+        TableSchema schema = snapshot.schema;
         if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
+            throw new IllegalArgumentException("Unknown table: " + snapshot.tableName);
         }
         PartitionInfo partition = schema.partitions.get(partitionNumber);
         try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "r")) {
@@ -618,22 +766,59 @@ public final class StorageEngine {
      * unknown.
      */
     public List<ColumnSpec> schema(String tableName) {
+        return schema(snapshot(tableName));
+    }
+
+    public List<ColumnSpec> schema(TableSnapshot snapshot) {
+        return List.copyOf(snapshot.schema.columns);
+    }
+
+    public TableSnapshot snapshot(String tableName) {
         TableSchema schema = tables.get(tableName);
         if (schema == null) {
             throw new IllegalArgumentException("Unknown table: " + tableName);
         }
-        return List.copyOf(schema.columns);
+        return new TableSnapshot(tableName, schema);
+    }
+
+    public Optional<TableSnapshot> snapshotIfPresent(String tableName) {
+        TableSchema schema = tables.get(tableName);
+        return schema == null ? Optional.empty() : Optional.of(new TableSnapshot(tableName, schema));
+    }
+
+    public TableSnapshot snapshot(String tableName, int version) {
+        ConcurrentNavigableMap<Integer, TableSchema> history = versionHistory.get(tableName);
+        if (history == null) {
+            throw new IllegalArgumentException("Unknown table: " + tableName);
+        }
+        TableSchema current = tables.get(tableName);
+        if (current == null || version > current.version) {
+            throw new IllegalArgumentException("Unknown version " + version + " for table: " + tableName);
+        }
+        TableSchema schema = history.get(version);
+        if (schema == null) {
+            throw new IllegalArgumentException("Unknown version " + version + " for table: " + tableName);
+        }
+        return new TableSnapshot(tableName, schema);
+    }
+
+    /**
+     * The table's current committed version. Throws IllegalArgumentException if
+     * unknown.
+     */
+    public int currentVersion(String tableName) {
+        return snapshot(tableName).version();
     }
 
     /**
      * The table's partition count. Throws IllegalArgumentException if unknown.
      */
     public int partitionCount(String tableName) {
-        TableSchema schema = tables.get(tableName);
-        if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
-        }
-        return schema.partitions.size();
+        return partitionCount(snapshot(tableName));
+    }
+
+    public int partitionCount(TableSnapshot snapshot) {
+        return snapshot.schema.partitions.size();
     }
 
     /**
@@ -642,10 +827,11 @@ public final class StorageEngine {
      * decide which partitions can be pruned without opening the data file.
      */
     public List<Object[]> columnStats(String tableName, String columnName) {
-        TableSchema schema = tables.get(tableName);
-        if (schema == null) {
-            throw new IllegalArgumentException("Unknown table: " + tableName);
-        }
+        return columnStats(snapshot(tableName), columnName);
+    }
+
+    public List<Object[]> columnStats(TableSnapshot snapshot, String columnName) {
+        TableSchema schema = snapshot.schema;
         // stats list starter empty [] men med samme size som antal partitions.
         List<Object[]> stats = new ArrayList<>(schema.partitions.size());
         for (PartitionInfo partition : schema.partitions) {
@@ -655,6 +841,12 @@ public final class StorageEngine {
         }
         // return stats giver den færdige liste: [[12,31],[88,95],[140,187],[210,299]]
         return stats;
+    }
+
+    private void publishSchema(String tableName, TableSchema schema) {
+        versionHistory.computeIfAbsent(tableName, ignored -> new ConcurrentSkipListMap<>())
+                .put(schema.version, schema);
+        tables.put(tableName, schema);
     }
 
     // ------------------------------------------------------------------
@@ -912,7 +1104,7 @@ public final class StorageEngine {
         try {
             CatalogFile catalogFile = MAPPER.readValue(catalogPath.toFile(), CatalogFile.class);
             for (Map.Entry<String, TableEntry> entry : catalogFile.tables.entrySet()) {
-                tables.put(entry.getKey(), toSchema(entry.getValue()));
+                publishSchema(entry.getKey(), toSchema(entry.getValue()));
             }
         } catch (IOException e) {
             LOGGER.error("Error loadCatalog mapper");
@@ -939,14 +1131,28 @@ public final class StorageEngine {
         for (Map.Entry<String, TableSchema> entry : tables.entrySet()) {
             catalogFile.tables.put(entry.getKey(), toEntry(entry.getValue()));
         }
-        // uses ObjectMapper to serialize the CatalogFile object to JSON and write it to
-        // the catalog file on disk
+        // writes the whole catalog to a temporary file and atomically renames it over
+        // catalog.json, so a crash mid-write never leaves a torn/partial catalog --
+        // readers either see the old file in full or the new one in full, never both
         try {
-            MAPPER.writeValue(catalogPath.toFile(), catalogFile);
+            Path tempPath = dataDirectory.resolve("catalog.json.tmp");
+            MAPPER.writeValue(tempPath.toFile(), catalogFile);
+            Files.move(tempPath, catalogPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             LOGGER.error("Error writing/saving value to catalog");
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * Writes the session's final committed state to catalog.json. We keep
+     * versions in memory only during the session (see
+     * docs/transactions-design.md); this is the one disk write per session,
+     * called once after the last statement has run.
+     */
+    @Override
+    public void close() {
+        saveCatalog();
     }
 
     /**
@@ -972,6 +1178,7 @@ public final class StorageEngine {
         // sets the data file name in the TableSchema to the data file name from the
         // TableEntry
         schema.dataFile = entry.dataFile;
+        schema.version = entry.version;
         // initializes the partitions list in the TableSchema to an empty list
         schema.partitions = new ArrayList<>();
 
@@ -1015,6 +1222,7 @@ public final class StorageEngine {
             entry.columns.add(columnEntry);
         }
         entry.dataFile = schema.dataFile;
+        entry.version = schema.version;
         entry.partitions = new ArrayList<>();
         // iterates through the partitions in the TableSchema, creating a PartitionEntry
         // for each partition
@@ -1085,6 +1293,27 @@ public final class StorageEngine {
     // In-memory model
     // ------------------------------------------------------------------
     /**
+     * A stable reference to one committed table schema for a statement.
+     */
+    public static final class TableSnapshot {
+        private final String tableName;
+        private final TableSchema schema;
+
+        private TableSnapshot(String tableName, TableSchema schema) {
+            this.tableName = tableName;
+            this.schema = schema;
+        }
+
+        public String tableName() {
+            return tableName;
+        }
+
+        public int version() {
+            return schema.version;
+        }
+    }
+
+    /**
      * Represents the schema of a table, including its columns, data file name,
      * and partition information. Used in-memory to manage the structure and
      * metadata of tables within the storage engine. TableSchema
@@ -1094,6 +1323,7 @@ public final class StorageEngine {
         List<ColumnSpec> columns;
         String dataFile;
         List<PartitionInfo> partitions;
+        int version;
     }
 
     /**
@@ -1139,6 +1369,7 @@ public final class StorageEngine {
         public List<ColumnEntry> columns = new ArrayList<>();
         public String dataFile;
         public List<PartitionEntry> partitions = new ArrayList<>();
+        public int version;
     }
 
     /**

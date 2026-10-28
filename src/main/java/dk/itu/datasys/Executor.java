@@ -58,28 +58,54 @@ public final class Executor {
         String columnsWithoutCommas = str.replace(",", "");
 
         LOGGER.debug("executing statement={}", columnsWithoutCommas);
-        binder.bind(statement);
+        Optional<StorageEngine.TableSnapshot> snapshot =
+                engine.snapshotIfPresent(tableName(statement));
+        binder.bind(statement, snapshot);
         long start = System.currentTimeMillis();
         Optional<List<Object[]>> rows = switch (statement) {
             case CreateTableStatement s -> {
                 engine.createTable(s.tableName(), s.columns());
-                LOGGER.debug("statement=CREATE_TABLE table={} durationMs={}",
-                        s.tableName(), System.currentTimeMillis() - start);
+                // CREATE TABLE always produces the table's first version, 0
+                LOGGER.debug("statement=CREATE_TABLE table={} version={} durationMs={}",
+                        s.tableName(), 0, System.currentTimeMillis() - start);
                 yield Optional.empty();
             }
             case CopyStatement s -> {
-                engine.copyFile(s.tableName(), s.csvFilePath());
-                LOGGER.debug("statement=COPY table={} durationMs={}",
-                        s.tableName(), System.currentTimeMillis() - start);
+                CopyResult result = engine.copyFile(snapshot.orElseThrow(), s.csvFilePath());
+                LOGGER.debug("statement=COPY table={} rows={} partitions={} version={} durationMs={}",
+                        s.tableName(), result.rows(), result.partitions(), result.version(),
+                        System.currentTimeMillis() - start);
+                yield Optional.empty();
+            }
+            case DeleteStatement s -> {
+                DeleteResult result = engine.delete(snapshot.orElseThrow(), s.where());
+                LOGGER.debug(
+                        "statement=DELETE table={} rowsDeleted={} partitionsRewritten={} partitionsCarried={} version={} durationMs={}",
+                        s.tableName(), result.rowsDeleted(), result.partitionsRewritten(),
+                        result.partitionsCarried(), result.version(), System.currentTimeMillis() - start);
                 yield Optional.empty();
             }
             case SelectStatement s -> {
-                List<Object[]> result = Operator.drain(planner.plan(s).root());
-                LOGGER.debug("statement=SELECT table={} rowsOut={} durationMs={}",
-                        s.tableName(), result.size(), System.currentTimeMillis() - start);
+                StorageEngine.TableSnapshot pinned = snapshot.orElseThrow();
+                int version = pinned.version();
+                Plan plan = planner.plan(s, pinned);
+                List<Object[]> result = Operator.drain(plan.root());
+                LOGGER.debug(
+                        "statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
+                        s.tableName(), result.size(), plan.stats().partitionsRead(),
+                        plan.stats().partitionsPruned(), version, System.currentTimeMillis() - start);
                 yield Optional.of(result);
             }
         };
         return new ExecutionResult(statement, rows);
+    }
+
+    private static String tableName(Statement statement) {
+        return switch (statement) {
+            case CreateTableStatement s -> s.tableName();
+            case CopyStatement s -> s.tableName();
+            case DeleteStatement s -> s.tableName();
+            case SelectStatement s -> s.tableName();
+        };
     }
 }

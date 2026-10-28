@@ -39,7 +39,11 @@ class StorageEngineIT {
 
     @Test
     void schemaPersistsAcrossRestart(@TempDir Path dir) {
-        new StorageEngine(dir).createTable("trips", TRIPS_COLUMNS);
+        // catalog.json is written once, on close (see docs/transactions-design.md) --
+        // a "restart" only sees what the previous engine actually closed.
+        try (StorageEngine engine = new StorageEngine(dir)) {
+            engine.createTable("trips", TRIPS_COLUMNS);
+        }
 
         StorageEngine restarted = new StorageEngine(dir);
         assertThrows(IllegalArgumentException.class,
@@ -155,9 +159,12 @@ class StorageEngineIT {
     @Test
     void dataPersistsAcrossRestart(@TempDir Path dir) throws IOException {
         Path csv = writeGoldenCsv(dir);
-        StorageEngine engineA = new StorageEngine(dir);
-        engineA.createTable("trips", TRIPS_COLUMNS);
-        engineA.copyFile("trips", csv.toString());
+        // catalog.json is written once, on close (see docs/transactions-design.md) --
+        // a "restart" only sees what the previous engine actually closed.
+        try (StorageEngine engineA = new StorageEngine(dir)) {
+            engineA.createTable("trips", TRIPS_COLUMNS);
+            engineA.copyFile("trips", csv.toString());
+        }
 
         StorageEngine engineB = new StorageEngine(dir);
         List<Object[]> rows = engineB.select("trips", "distance", Comparison.GREATER_THAN, -1L);

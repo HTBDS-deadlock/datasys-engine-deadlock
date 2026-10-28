@@ -34,6 +34,33 @@ class BinderTest {
                                 Optional.empty())));
                 assertDoesNotThrow(() -> binder.bind(new CreateTableStatement("other",
                                 List.of(new ColumnSpec("x", ColumnType.LONG)))));
+                assertDoesNotThrow(() -> binder.bind(new DeleteStatement("trips",
+                                Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)))));
+                assertDoesNotThrow(() -> binder.bind(new DeleteStatement("trips", Optional.empty())));
+        }
+
+        @Test
+        void rejectsUnknownTableInDelete() {
+                Binder binder = new Binder(engineWithTripsTable());
+                assertThrows(IllegalArgumentException.class,
+                                () -> binder.bind(new DeleteStatement("ghost", Optional.empty())));
+        }
+
+        @Test
+        void rejectsUnknownColumnInDeleteWhere() {
+                Binder binder = new Binder(engineWithTripsTable());
+                assertThrows(IllegalArgumentException.class,
+                                () -> binder.bind(new DeleteStatement("trips",
+                                                Optional.of(new Predicate("ghost_column", Comparison.EQUALS, "x")))));
+        }
+
+        @Test
+        void rejectsWrongConstantTypeInDeleteWhere() {
+                Binder binder = new Binder(engineWithTripsTable());
+                assertThrows(IllegalArgumentException.class,
+                                () -> binder.bind(new DeleteStatement("trips",
+                                                Optional.of(new Predicate("distance", Comparison.GREATER_THAN,
+                                                                "not-a-long")))));
         }
 
         @Test
