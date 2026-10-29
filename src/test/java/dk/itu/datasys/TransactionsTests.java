@@ -237,6 +237,7 @@ class TransactionsTests {
                     "statement=COPY table=trips rows=1 partitions=1 version=2");
             assertEquals(2, engine.currentVersion("trips"));
             assertEquals(9, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+            assertTrue(hasCity(engine, "Herning"));
 
             DeleteResult retry = engine.delete("trips",
                     Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
@@ -388,13 +389,21 @@ class TransactionsTests {
 
             String stdout = runEngine("-f", script.toString());
 
-            // the golden CSV has 8 rows, 2 of which (210, 299) are removed by the
-            // DELETE; two COPY statements load it twice, so 12 rows remain
-            String[] lines = stdout.isEmpty() ? new String[0] : stdout.split(System.lineSeparator());
-            assertEquals(12, lines.length);
-            for (String line : lines) {
-                assertEquals(3, line.split(",", -1).length);
-            }
+            String expectedCsv = """
+                    Copenhagen,12,23.5
+                    Aarhus,187,301.0
+                    Odense,95,120.75
+                    Copenhagen,140,210.0
+                    Roskilde,31,45.0
+                    Copenhagen,88,99.99
+                    Copenhagen,12,23.5
+                    Aarhus,187,301.0
+                    Odense,95,120.75
+                    Copenhagen,140,210.0
+                    Roskilde,31,45.0
+                    Copenhagen,88,99.99
+                    """;
+            assertEquals(expectedCsv, stdout);
         } finally {
             deleteRecursively(REAL_DATA_DIRECTORY);
         }
