@@ -183,11 +183,19 @@ class TransactionsTests {
             SelectStatement select = new SelectStatement("trips", Optional.empty(), Optional.empty());
             new Binder(engine).bind(select, Optional.of(copiedVersion));
             Plan plan = new Planner(engine).plan(select, copiedVersion);
+            Operator scan = plan.root();
+            scan.open();
 
             engine.delete("trips",
                     Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
 
-            assertEquals(8, Operator.drain(plan.root()).size());
+            int rowsFromPinnedVersion = 0;
+            while (scan.next() != null) {
+                rowsFromPinnedVersion++;
+            }
+            scan.close();
+
+            assertEquals(8, rowsFromPinnedVersion);
             assertEquals(6, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
             assertThrows(IllegalArgumentException.class, () -> engine.snapshot("trips", 99));
         }

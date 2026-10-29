@@ -62,6 +62,10 @@ public final class StorageEngine implements AutoCloseable {
     private final int maxRowsPerPartition;
     private final Object commitLock = new Object();
     private final Object partitionWriteLock = new Object();
+    /**
+     * Test seam invoked immediately before commit validation. Production leaves
+     * it as a no-op; concurrency tests can park a writer here deterministically.
+     */
     volatile Runnable beforeCommit = () -> {
     };
     private final Map<String, TableSchema> tables = new ConcurrentHashMap<>();
