@@ -60,6 +60,10 @@ public final class StorageEngine implements AutoCloseable {
     private final Path dataDirectory;
     private final Path catalogPath;
     private final int maxRowsPerPartition;
+    private final Object commitLock = new Object();
+    private final Object partitionWriteLock = new Object();
+    volatile Runnable beforeCommit = () -> {
+    };
     private final Map<String, TableSchema> tables = new ConcurrentHashMap<>();
     private final Map<String, ConcurrentNavigableMap<Integer, TableSchema>> versionHistory =
             new ConcurrentHashMap<>();
@@ -217,48 +221,41 @@ public final class StorageEngine implements AutoCloseable {
         int totalRows = 0;
         int nextPartitionIndex = schema.partitions.size();
 
-        // opens the binary data file for writing and the CSV file for reading
-        try (RandomAccessFile raf = new RandomAccessFile(dataFilePath.toFile(), "rw"); BufferedReader reader = Files.newBufferedReader(Path.of(csvFilePath), StandardCharsets.UTF_8)) {
+        synchronized (partitionWriteLock) {
+            boolean dataFileAlreadyExists = Files.exists(dataFilePath);
+            try (RandomAccessFile raf = new RandomAccessFile(dataFilePath.toFile(), "rw");
+                    BufferedReader reader = Files.newBufferedReader(Path.of(csvFilePath), StandardCharsets.UTF_8)) {
 
-            if (isNewFile) {
-                raf.setLength(0);
-                raf.write(MAGIC);
-                raf.writeInt(FORMAT_VERSION);
-            } else {
-                // append after the existing partitions; the header was already written
-                // once, when the file was first created
-                raf.seek(raf.length());
-            }
-
-            // reads the CSV file line by line, parsing each line with the function
-            // parseLine into a row of data according
-            // to the tables schema, and adding the row to a batch. When the batch reaches
-            // the maximum number of rows per partition, the batch is written to the binary
-            // data file as a new partition with the function writePartition, and the batch is
-            // cleared.
-            // After all lines have been read, any remaining rows in the batch are written
-            // as a final partition.
-            List<Object[]> batch = new ArrayList<>(maxRowsPerPartition);
-            String line;
-            int lineNumber = 0;
-            while ((line = reader.readLine()) != null) {
-                lineNumber++;
-                Object[] row = parseLine(line, schema.columns, csvFilePath, lineNumber);
-                batch.add(row);
-                totalRows++;
-                if (batch.size() == maxRowsPerPartition) {
-                    newPartitions.add(writePartition(raf, schema.columns, batch, tableName, nextPartitionIndex++));
-                    batch.clear();
+                if (isNewFile && !dataFileAlreadyExists) {
+                    raf.write(MAGIC);
+                    raf.writeInt(FORMAT_VERSION);
+                } else {
+                    // Another writer may already have created the file from this snapshot.
+                    validateFileHeader(raf);
+                    raf.seek(raf.length());
                 }
-            }
 
-            // say partition size is 10.000 and there is only 8_000 let then the reiaming goes in last partition
-            if (!batch.isEmpty()) {
-                newPartitions.add(writePartition(raf, schema.columns, batch, tableName, nextPartitionIndex++));
+                List<Object[]> batch = new ArrayList<>(maxRowsPerPartition);
+                String line;
+                int lineNumber = 0;
+                while ((line = reader.readLine()) != null) {
+                    lineNumber++;
+                    Object[] row = parseLine(line, schema.columns, csvFilePath, lineNumber);
+                    batch.add(row);
+                    totalRows++;
+                    if (batch.size() == maxRowsPerPartition) {
+                        newPartitions.add(writePartition(raf, schema.columns, batch, tableName, nextPartitionIndex++));
+                        batch.clear();
+                    }
+                }
+
+                if (!batch.isEmpty()) {
+                    newPartitions.add(writePartition(raf, schema.columns, batch, tableName, nextPartitionIndex++));
+                }
+            } catch (IOException e) {
+                LOGGER.error("Error copyFile");
+                throw new UncheckedIOException(e);
             }
-        } catch (IOException e) {
-            LOGGER.error("Error copyFile");
-            throw new UncheckedIOException(e);
         }
 
         // commits a new TableSchema version: the existing partitions plus the ones
@@ -271,7 +268,7 @@ public final class StorageEngine implements AutoCloseable {
         updated.dataFile = dataFileName;
         updated.partitions = allPartitions;
         updated.version = schema.version + 1;
-        publishSchema(tableName, updated);
+        commitSchema(tableName, schema.version, updated);
 
         // logs the completion of the copy operation with the table name, CSV file name,
         // total number of rows copied, number of partitions created,
@@ -489,21 +486,23 @@ public final class StorageEngine implements AutoCloseable {
         int version = schema.version;
         if (partitionsRewritten > 0) {
             List<PartitionInfo> newPartitions = new ArrayList<>(decisions.size());
-            try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "rw")) {
-                raf.seek(raf.length());
-                int nextPartitionIndex = schema.partitions.size();
-                for (Decision d : decisions) {
-                    if (d.carried() != null) {
-                        newPartitions.add(d.carried());
-                    } else if (!d.rewrite().isEmpty()) {
-                        newPartitions.add(writePartition(raf, schema.columns, d.rewrite(), tableName,
-                                nextPartitionIndex++));
+            synchronized (partitionWriteLock) {
+                try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "rw")) {
+                    raf.seek(raf.length());
+                    int nextPartitionIndex = schema.partitions.size();
+                    for (Decision d : decisions) {
+                        if (d.carried() != null) {
+                            newPartitions.add(d.carried());
+                        } else if (!d.rewrite().isEmpty()) {
+                            newPartitions.add(writePartition(raf, schema.columns, d.rewrite(), tableName,
+                                    nextPartitionIndex++));
+                        }
+                        // d.rewrite().isEmpty(): every row in this partition was deleted, so the
+                        // partition is simply dropped from the new version
                     }
-                    // d.rewrite().isEmpty(): every row in this partition was deleted, so the
-                    // partition is simply dropped from the new version
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
                 }
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
             }
 
             TableSchema updated = new TableSchema();
@@ -511,7 +510,7 @@ public final class StorageEngine implements AutoCloseable {
             updated.dataFile = schema.dataFile;
             updated.partitions = newPartitions;
             updated.version = schema.version + 1;
-            publishSchema(tableName, updated);
+            commitSchema(tableName, schema.version, updated);
             version = updated.version;
         }
 
@@ -849,6 +848,22 @@ public final class StorageEngine implements AutoCloseable {
         tables.put(tableName, schema);
     }
 
+    private void commitSchema(String tableName, int baseVersion, TableSchema updated) {
+        beforeCommit.run();
+        synchronized (commitLock) {
+            TableSchema current = tables.get(tableName);
+            if (current == null) {
+                throw new IllegalArgumentException("Unknown table: " + tableName);
+            }
+            if (current.version != baseVersion) {
+                String message = "conflict table=" + tableName + " base=" + baseVersion + " current=" + current.version;
+                LOGGER.error(message);
+                throw new ConflictException(tableName, baseVersion, current.version);
+            }
+            publishSchema(tableName, updated);
+        }
+    }
+
     // ------------------------------------------------------------------
     // Encoding, min/max, and pruning -- package-private so unit tests can
     // exercise them directly (see Note on visibility in the exercise).
@@ -1152,7 +1167,9 @@ public final class StorageEngine implements AutoCloseable {
      */
     @Override
     public void close() {
-        saveCatalog();
+        synchronized (commitLock) {
+            saveCatalog();
+        }
     }
 
     /**

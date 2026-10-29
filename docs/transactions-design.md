@@ -27,8 +27,8 @@ changes from that invocation are lost, although any already-appended partition b
 orphans. This is an accepted scope limitation of this exercise.
 
 The concurrent maps make current-version publication and version lookup safe for concurrent readers.
-Concurrent-writer conflict detection is deferred to Exercise 8; this design does not promise that two
-simultaneous writers can both commit from the same base version.
+Exercise 8's first-committer-wins validation serializes DML commits and rejects a writer whose pinned
+base version is no longer current.
 
 `createTable`, `copyFile`, and `delete` build and publish in-memory `TableSchema` versions without
 writing `catalog.json` per statement. `StorageEngine.close()` performs the single catalog write for
@@ -37,16 +37,32 @@ when a statement fails.
 
 ## 2. Commit
 
-**In-JVM atomicity**: committing a version first records the completed schema in version history,
-then publishes it as the current version by replacing the table's entry in `tables` in one map `put`.
-A reader that captures the current entry sees either the prior or new schema, not a partially updated
-schema.
+**In-JVM atomicity**: a writer records the version it pinned as its base version. At commit,
+`StorageEngine` synchronizes validation and publication: if the current version differs from the base,
+the writer logs `conflict table=... base=... current=...` and throws `ConflictException`. Otherwise it
+records the completed schema in version history and publishes it as current. This is first-committer-
+wins; the losing statement cannot publish its schema, and any partition bytes it already wrote are
+orphaned.
+
+Partition appends to the shared table data file are separately serialized by a storage write lock so
+concurrent writers cannot interleave their bytes. The append lock is released before commit
+validation, allowing writers based on the same snapshot to reach commit and detect the conflict.
+`close()` synchronizes on the commit monitor while saving the final catalog, so catalog serialization
+does not overlap a metadata commit.
+
+For deterministic concurrency tests, the package-private `beforeCommit` hook runs immediately before
+commit validation. It defaults to a no-op; tests can park one writer there while another commits, with
+latches that have bounded timeouts. The hook runs outside the commit monitor so the competing writer
+can finish its commit.
 
 **On-disk atomicity**: deferred to engine close (see §1). At that point, every table's current
 (highest-version) `TableSchema` is serialized and written to a new temporary file, which is then
 atomically renamed over `catalog.json` (`Files.move(..., StandardCopyOption.ATOMIC_MOVE)`), relying on
 POSIX's guarantee that `rename()` is atomic. This still protects the final save itself against a torn
 write, even though it is the only disk write of the session.
+
+This exercise serializes commits within one `StorageEngine` instance. It does not provide conflict
+detection between separate JVM invocations writing the same data directory.
 
 ## 3. Snapshot
 

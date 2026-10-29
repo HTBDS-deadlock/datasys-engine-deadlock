@@ -1,7 +1,9 @@
 package dk.itu.datasys;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -11,6 +13,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -172,15 +180,130 @@ class TransactionsTests {
             engine.copyFile("trips", csv.toString());
             StorageEngine.TableSnapshot copiedVersion = engine.snapshot("trips", 1);
 
-            engine.delete("trips",
-                    Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
-
             SelectStatement select = new SelectStatement("trips", Optional.empty(), Optional.empty());
             new Binder(engine).bind(select, Optional.of(copiedVersion));
             Plan plan = new Planner(engine).plan(select, copiedVersion);
+
+            engine.delete("trips",
+                    Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
+
             assertEquals(8, Operator.drain(plan.root()).size());
             assertEquals(6, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
             assertThrows(IllegalArgumentException.class, () -> engine.snapshot("trips", 99));
+        }
+    }
+
+    @Test
+    void parkedDeleteLosesToCopyAndCanBeRetried(@TempDir Path dir) throws Exception {
+        Path csv = writeGoldenCsv(dir);
+        Path additionalCsv = dir.resolve("additional.csv");
+        Files.writeString(additionalCsv, "Herning,50,75.0\n");
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch winnerDone = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (StorageEngine engine = new StorageEngine(dir)) {
+            engine.createTable("trips", TRIPS_COLUMNS);
+            engine.copyFile("trips", csv.toString());
+            engine.beforeCommit = () -> {
+                parked.countDown();
+                await(winnerDone);
+            };
+
+            Future<?> loser = executor.submit(() -> engine.delete("trips",
+                    Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L))));
+            assertTrue(parked.await(5, TimeUnit.SECONDS), "DELETE did not reach the pre-commit hook");
+
+            engine.beforeCommit = () -> {
+            };
+            engine.copyFile("trips", additionalCsv.toString());
+            winnerDone.countDown();
+
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> loser.get(5, TimeUnit.SECONDS));
+            assertInstanceOf(ConflictException.class, failure.getCause());
+            assertEquals(2, engine.currentVersion("trips"));
+            assertEquals(9, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+
+            DeleteResult retry = engine.delete("trips",
+                    Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
+            assertEquals(3, retry.version());
+            assertEquals(7, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+        } finally {
+            winnerDone.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void parkedCopyLosesToCopyAndCanBeRetried(@TempDir Path dir) throws Exception {
+        Path csv = writeGoldenCsv(dir);
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch winnerDone = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (StorageEngine engine = new StorageEngine(dir)) {
+            engine.createTable("trips", TRIPS_COLUMNS);
+            engine.beforeCommit = () -> {
+                parked.countDown();
+                await(winnerDone);
+            };
+
+            Future<?> loser = executor.submit(() -> engine.copyFile("trips", csv.toString()));
+            assertTrue(parked.await(5, TimeUnit.SECONDS), "COPY did not reach the pre-commit hook");
+
+            engine.beforeCommit = () -> {
+            };
+            engine.copyFile("trips", csv.toString());
+            winnerDone.countDown();
+
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> loser.get(5, TimeUnit.SECONDS));
+            assertInstanceOf(ConflictException.class, failure.getCause());
+            assertEquals(1, engine.currentVersion("trips"));
+            assertEquals(8, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+
+            CopyResult retry = engine.copyFile("trips", csv.toString());
+            assertEquals(2, retry.version());
+            assertEquals(16, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+        } finally {
+            winnerDone.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new AssertionError("Timed out waiting for the competing commit");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while waiting for the competing commit", e);
+        }
+    }
+
+    @Test
+    void staleCopyConflictsWithoutPublishingAndCanBeRetried(@TempDir Path dir) throws IOException {
+        Path goldenCsv = writeGoldenCsv(dir);
+        Path additionalCsv = dir.resolve("additional.csv");
+        Files.writeString(additionalCsv, "Herning,50,75.0\n");
+
+        try (StorageEngine engine = new StorageEngine(dir)) {
+            engine.createTable("trips", TRIPS_COLUMNS);
+            StorageEngine.TableSnapshot staleSnapshot = engine.snapshot("trips");
+
+            engine.copyFile("trips", goldenCsv.toString());
+
+            ConflictException conflict = assertThrows(ConflictException.class,
+                    () -> engine.copyFile(staleSnapshot, additionalCsv.toString()));
+            assertEquals("conflict table=trips base=0 current=1", conflict.getMessage());
+            assertEquals(1, engine.currentVersion("trips"));
+            assertEquals(8, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+
+            CopyResult retry = engine.copyFile("trips", additionalCsv.toString());
+            assertEquals(2, retry.version());
+            assertEquals(9, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
         }
     }
 
