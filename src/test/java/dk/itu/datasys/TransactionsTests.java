@@ -1,7 +1,11 @@
 package dk.itu.datasys;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -11,6 +15,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -172,15 +182,184 @@ class TransactionsTests {
             engine.copyFile("trips", csv.toString());
             StorageEngine.TableSnapshot copiedVersion = engine.snapshot("trips", 1);
 
-            engine.delete("trips",
-                    Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
-
             SelectStatement select = new SelectStatement("trips", Optional.empty(), Optional.empty());
             new Binder(engine).bind(select, Optional.of(copiedVersion));
             Plan plan = new Planner(engine).plan(select, copiedVersion);
-            assertEquals(8, Operator.drain(plan.root()).size());
+            Operator scan = plan.root();
+            scan.open();
+
+            engine.delete("trips",
+                    Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
+
+            int rowsFromPinnedVersion = 0;
+            while (scan.next() != null) {
+                rowsFromPinnedVersion++;
+            }
+            scan.close();
+
+            assertEquals(8, rowsFromPinnedVersion);
             assertEquals(6, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
             assertThrows(IllegalArgumentException.class, () -> engine.snapshot("trips", 99));
+        }
+    }
+
+    @Test
+    void parkedDeleteLosesToCopyAndCanBeRetried(@TempDir Path dir) throws Exception {
+        Path csv = writeGoldenCsv(dir);
+        Path additionalCsv = dir.resolve("additional.csv");
+        Files.writeString(additionalCsv, "Herning,50,75.0\n");
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch winnerDone = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (StorageEngine engine = new StorageEngine(dir)) {
+            engine.createTable("trips", TRIPS_COLUMNS);
+            engine.copyFile("trips", csv.toString());
+            int logLinesBefore = logLineCount();
+            Executor sqlExecutor = new Executor(engine);
+            engine.beforeCommit = () -> {
+                parked.countDown();
+                await(winnerDone);
+            };
+
+            Future<?> loser = executor.submit(() -> sqlExecutor.run("DELETE FROM trips WHERE distance > 200;"));
+            assertTrue(parked.await(5, TimeUnit.SECONDS), "DELETE did not reach the pre-commit hook");
+
+            engine.beforeCommit = () -> {
+            };
+            sqlExecutor.run("COPY trips FROM '" + additionalCsv + "';");
+            winnerDone.countDown();
+
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> loser.get(5, TimeUnit.SECONDS));
+            assertInstanceOf(ConflictException.class, failure.getCause());
+            assertConflictLogUsesDistinctWriterThreads(logLinesBefore,
+                    "statement=COPY table=trips rows=1 partitions=1 version=2");
+            assertEquals(2, engine.currentVersion("trips"));
+            assertEquals(9, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+            assertTrue(hasCity(engine, "Herning"));
+
+            DeleteResult retry = engine.delete("trips",
+                    Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
+            assertEquals(3, retry.version());
+            assertEquals(7, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+        } finally {
+            winnerDone.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void parkedCopyLosesToCopyAndCanBeRetried(@TempDir Path dir) throws Exception {
+        Path baseCsv = writeGoldenCsv(dir);
+        Path loserCsv = dir.resolve("loser.csv");
+        Path winnerCsv = dir.resolve("winner.csv");
+        Files.writeString(loserCsv, "LoserCopy,50,75.0\n");
+        Files.writeString(winnerCsv, "WinnerCopy,60,85.0\n");
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch winnerDone = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (StorageEngine engine = new StorageEngine(dir)) {
+            engine.createTable("trips", TRIPS_COLUMNS);
+            engine.copyFile("trips", baseCsv.toString());
+            int logLinesBefore = logLineCount();
+            Executor sqlExecutor = new Executor(engine);
+            engine.beforeCommit = () -> {
+                parked.countDown();
+                await(winnerDone);
+            };
+
+            Future<?> loser = executor.submit(() -> sqlExecutor.run("COPY trips FROM '" + loserCsv + "';"));
+            assertTrue(parked.await(5, TimeUnit.SECONDS), "COPY did not reach the pre-commit hook");
+
+            engine.beforeCommit = () -> {
+            };
+            sqlExecutor.run("COPY trips FROM '" + winnerCsv + "';");
+            winnerDone.countDown();
+
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> loser.get(5, TimeUnit.SECONDS));
+            assertInstanceOf(ConflictException.class, failure.getCause());
+            assertConflictLogUsesDistinctWriterThreads(logLinesBefore,
+                    "statement=COPY table=trips rows=1 partitions=1 version=2");
+            assertEquals(2, engine.currentVersion("trips"));
+            assertEquals(9, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+            assertTrue(hasCity(engine, "WinnerCopy"));
+            assertFalse(hasCity(engine, "LoserCopy"));
+
+            CopyResult retry = engine.copyFile("trips", loserCsv.toString());
+            assertEquals(3, retry.version());
+            assertEquals(10, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+            assertTrue(hasCity(engine, "WinnerCopy"));
+            assertTrue(hasCity(engine, "LoserCopy"));
+        } finally {
+            winnerDone.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new AssertionError("Timed out waiting for the competing commit");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while waiting for the competing commit", e);
+        }
+    }
+
+    private static int logLineCount() throws IOException {
+        Path logFile = Path.of("logs", "engine.log");
+        return Files.exists(logFile) ? Files.readAllLines(logFile, StandardCharsets.UTF_8).size() : 0;
+    }
+
+    private static void assertConflictLogUsesDistinctWriterThreads(int firstNewLine, String winningCopy)
+            throws IOException {
+        List<String> allLines = Files.readAllLines(Path.of("logs", "engine.log"), StandardCharsets.UTF_8);
+        List<String> newLines = allLines.subList(firstNewLine, allLines.size());
+        String conflict = newLines.stream()
+                .filter(line -> line.contains(",ERROR,") && line.contains("conflict table=trips"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing ERROR log for the losing writer"));
+        String winner = newLines.stream()
+                .filter(line -> line.contains(",DEBUG,Executor," + winningCopy))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing winning writer log"));
+
+        assertEquals(7, conflict.split(",", 7).length);
+        assertEquals(7, winner.split(",", 7).length);
+        assertNotEquals(conflict.split(",", 7)[3], winner.split(",", 7)[3],
+                "The losing and winning writer should have different thread IDs");
+    }
+
+    private static boolean hasCity(StorageEngine engine, String city) {
+        return engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).stream()
+                .anyMatch(row -> city.equals(row[0]));
+    }
+
+    @Test
+    void staleCopyConflictsWithoutPublishingAndCanBeRetried(@TempDir Path dir) throws IOException {
+        Path goldenCsv = writeGoldenCsv(dir);
+        Path additionalCsv = dir.resolve("additional.csv");
+        Files.writeString(additionalCsv, "Herning,50,75.0\n");
+
+        try (StorageEngine engine = new StorageEngine(dir)) {
+            engine.createTable("trips", TRIPS_COLUMNS);
+            StorageEngine.TableSnapshot staleSnapshot = engine.snapshot("trips");
+
+            engine.copyFile("trips", goldenCsv.toString());
+
+            ConflictException conflict = assertThrows(ConflictException.class,
+                    () -> engine.copyFile(staleSnapshot, additionalCsv.toString()));
+            assertEquals("conflict table=trips base=0 current=1", conflict.getMessage());
+            assertEquals(1, engine.currentVersion("trips"));
+            assertEquals(8, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+
+            CopyResult retry = engine.copyFile("trips", additionalCsv.toString());
+            assertEquals(2, retry.version());
+            assertEquals(9, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
         }
     }
 
@@ -210,13 +389,21 @@ class TransactionsTests {
 
             String stdout = runEngine("-f", script.toString());
 
-            // the golden CSV has 8 rows, 2 of which (210, 299) are removed by the
-            // DELETE; two COPY statements load it twice, so 12 rows remain
-            String[] lines = stdout.isEmpty() ? new String[0] : stdout.split(System.lineSeparator());
-            assertEquals(12, lines.length);
-            for (String line : lines) {
-                assertEquals(3, line.split(",", -1).length);
-            }
+            String expectedCsv = """
+                    Copenhagen,12,23.5
+                    Aarhus,187,301.0
+                    Odense,95,120.75
+                    Copenhagen,140,210.0
+                    Roskilde,31,45.0
+                    Copenhagen,88,99.99
+                    Copenhagen,12,23.5
+                    Aarhus,187,301.0
+                    Odense,95,120.75
+                    Copenhagen,140,210.0
+                    Roskilde,31,45.0
+                    Copenhagen,88,99.99
+                    """;
+            assertEquals(expectedCsv, stdout);
         } finally {
             deleteRecursively(REAL_DATA_DIRECTORY);
         }
