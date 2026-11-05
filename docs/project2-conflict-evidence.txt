@@ -1,5 +1,0 @@
-Test: TransactionsTests.parkedDeleteLosesToCopyAndCanBeRetried
-Result: passed (1 test, 0 failures, 0 errors)
-
-2026-11-05                  10:19:02.692,6fbcbece-d308-4285-933d-70acb6edd8ac,1,3,DEBUG,Executor,statement=COPY table=trips rows=1 partitions=1 version=2 durationMs=0
-2026-11-05                  10:19:02.693,c24f3e66-58a7-49e9-b0ca-335f62e2e8d2,1,36,ERROR,StorageEngine,conflict table=trips base=1 current=2
