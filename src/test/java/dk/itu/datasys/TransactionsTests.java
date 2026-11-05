@@ -2,7 +2,6 @@ package dk.itu.datasys;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -16,11 +15,11 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -204,7 +203,7 @@ class TransactionsTests {
     }
 
     @Test
-    void parkedDeleteLosesToCopyAndCanBeRetried(@TempDir Path dir) throws Exception {
+    void parkedDeleteRebasesOnWinningCopy(@TempDir Path dir) throws Exception {
         Path csv = writeGoldenCsv(dir);
         Path additionalCsv = dir.resolve("additional.csv");
         Files.writeString(additionalCsv, "Herning,50,75.0\n");
@@ -230,19 +229,14 @@ class TransactionsTests {
             sqlExecutor.run("COPY trips FROM '" + additionalCsv + "';");
             winnerDone.countDown();
 
-            ExecutionException failure = assertThrows(ExecutionException.class,
-                    () -> loser.get(5, TimeUnit.SECONDS));
-            assertInstanceOf(ConflictException.class, failure.getCause());
+            loser.get(5, TimeUnit.SECONDS);
             assertConflictLogUsesDistinctWriterThreads(logLinesBefore,
                     "statement=COPY table=trips rows=1 partitions=1 version=2");
-            assertEquals(2, engine.currentVersion("trips"));
-            assertEquals(9, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
-            assertTrue(hasCity(engine, "Herning"));
-
-            DeleteResult retry = engine.delete("trips",
-                    Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
-            assertEquals(3, retry.version());
+            assertExecutorLogExists(logLinesBefore,
+                    "statement=DELETE table=trips rowsDeleted=2 partitionsRewritten=1 partitionsCarried=1 version=3");
+            assertEquals(3, engine.currentVersion("trips"));
             assertEquals(7, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+            assertTrue(hasCity(engine, "Herning"));
         } finally {
             winnerDone.countDown();
             executor.shutdownNow();
@@ -250,7 +244,7 @@ class TransactionsTests {
     }
 
     @Test
-    void parkedCopyLosesToCopyAndCanBeRetried(@TempDir Path dir) throws Exception {
+    void parkedCopyRebasesOnWinningCopyWithoutDuplicatingRows(@TempDir Path dir) throws Exception {
         Path baseCsv = writeGoldenCsv(dir);
         Path loserCsv = dir.resolve("loser.csv");
         Path winnerCsv = dir.resolve("winner.csv");
@@ -278,18 +272,12 @@ class TransactionsTests {
             sqlExecutor.run("COPY trips FROM '" + winnerCsv + "';");
             winnerDone.countDown();
 
-            ExecutionException failure = assertThrows(ExecutionException.class,
-                    () -> loser.get(5, TimeUnit.SECONDS));
-            assertInstanceOf(ConflictException.class, failure.getCause());
+            loser.get(5, TimeUnit.SECONDS);
             assertConflictLogUsesDistinctWriterThreads(logLinesBefore,
                     "statement=COPY table=trips rows=1 partitions=1 version=2");
-            assertEquals(2, engine.currentVersion("trips"));
-            assertEquals(9, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
-            assertTrue(hasCity(engine, "WinnerCopy"));
-            assertFalse(hasCity(engine, "LoserCopy"));
-
-            CopyResult retry = engine.copyFile("trips", loserCsv.toString());
-            assertEquals(3, retry.version());
+            assertExecutorLogExists(logLinesBefore,
+                    "statement=COPY table=trips rows=1 partitions=1 version=3");
+            assertEquals(3, engine.currentVersion("trips"));
             assertEquals(10, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
             assertTrue(hasCity(engine, "WinnerCopy"));
             assertTrue(hasCity(engine, "LoserCopy"));
@@ -334,13 +322,20 @@ class TransactionsTests {
                 "The losing and winning writer should have different thread IDs");
     }
 
+    private static void assertExecutorLogExists(int firstNewLine, String expectedMessage) throws IOException {
+        List<String> allLines = Files.readAllLines(Path.of("logs", "engine.log"), StandardCharsets.UTF_8);
+        assertTrue(allLines.subList(firstNewLine, allLines.size()).stream()
+                .anyMatch(line -> line.contains(",DEBUG,Executor," + expectedMessage)),
+                "Missing executor log: " + expectedMessage);
+    }
+
     private static boolean hasCity(StorageEngine engine, String city) {
         return engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).stream()
                 .anyMatch(row -> city.equals(row[0]));
     }
 
     @Test
-    void staleCopyConflictsWithoutPublishingAndCanBeRetried(@TempDir Path dir) throws IOException {
+    void staleCopyRebasesWithoutAppendingItsRowsTwice(@TempDir Path dir) throws IOException {
         Path goldenCsv = writeGoldenCsv(dir);
         Path additionalCsv = dir.resolve("additional.csv");
         Files.writeString(additionalCsv, "Herning,50,75.0\n");
@@ -351,15 +346,45 @@ class TransactionsTests {
 
             engine.copyFile("trips", goldenCsv.toString());
 
-            ConflictException conflict = assertThrows(ConflictException.class,
-                    () -> engine.copyFile(staleSnapshot, additionalCsv.toString()));
-            assertEquals("conflict table=trips base=0 current=1", conflict.getMessage());
-            assertEquals(1, engine.currentVersion("trips"));
-            assertEquals(8, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
-
-            CopyResult retry = engine.copyFile("trips", additionalCsv.toString());
-            assertEquals(2, retry.version());
+            CopyResult rebased = engine.copyFile(staleSnapshot, additionalCsv.toString());
+            assertEquals(2, rebased.version());
             assertEquals(9, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+            assertTrue(hasCity(engine, "Herning"));
+        }
+    }
+
+    @Test
+    void copyRebaseStopsAfterBoundedCommitAttempts(@TempDir Path dir) throws IOException {
+        Path baseCsv = writeGoldenCsv(dir);
+        Path losingCsv = dir.resolve("loser.csv");
+        Path winningCsv = dir.resolve("winner.csv");
+        Files.writeString(losingCsv, "LoserCopy,50,75.0\n");
+        Files.writeString(winningCsv, "WinnerCopy,60,85.0\n");
+        AtomicInteger competingCommits = new AtomicInteger();
+
+        try (StorageEngine engine = new StorageEngine(dir)) {
+            engine.createTable("trips", TRIPS_COLUMNS);
+            engine.copyFile("trips", baseCsv.toString());
+
+            Runnable[] createConflict = new Runnable[1];
+            createConflict[0] = () -> {
+                competingCommits.incrementAndGet();
+                engine.beforeCommit = () -> {
+                };
+                engine.copyFile("trips", winningCsv.toString());
+                engine.beforeCommit = createConflict[0];
+            };
+            engine.beforeCommit = createConflict[0];
+
+            ConflictException conflict = assertThrows(ConflictException.class,
+                    () -> engine.copyFile("trips", losingCsv.toString()));
+
+            assertEquals(3, competingCommits.get());
+            assertEquals(4, engine.currentVersion("trips"));
+            assertEquals(11, engine.select("trips", "distance", Comparison.GREATER_THAN, -1L).size());
+            assertTrue(hasCity(engine, "WinnerCopy"));
+            assertFalse(hasCity(engine, "LoserCopy"));
+            assertEquals("conflict table=trips base=3 current=4", conflict.getMessage());
         }
     }
 

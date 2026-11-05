@@ -27,8 +27,10 @@ changes from that invocation are lost, although any already-appended partition b
 orphans. This is an accepted scope limitation of this exercise.
 
 The concurrent maps make current-version publication and version lookup safe for concurrent readers.
-Exercise 8's first-committer-wins validation serializes DML commits and rejects a writer whose pinned
-base version is no longer current.
+Commit validation is first-committer-wins, followed by bounded operation-specific rebasing when a
+writer's pinned base is stale: `COPY` merges its already-appended partitions onto the latest schema,
+while `DELETE` reruns its predicate against a fresh snapshot. Each operation gets at most three commit
+attempts, including its initial attempt.
 
 `createTable`, `copyFile`, and `delete` build and publish in-memory `TableSchema` versions without
 writing `catalog.json` per statement. `StorageEngine.close()` performs the single catalog write for
@@ -39,14 +41,18 @@ when a statement fails.
 
 **In-JVM atomicity**: a writer records the version it pinned as its base version. At commit,
 `StorageEngine` synchronizes validation and publication: if the current version differs from the base,
-the writer logs `conflict table=... base=... current=...` and throws `ConflictException`. Otherwise it
-records the completed schema in version history and publishes it as current. This is first-committer-
-wins; the losing statement cannot publish its schema, and any partition bytes it already wrote are
-orphaned.
+the writer logs `conflict table=... base=... current=...` and throws `ConflictException`. The operation
+then gets up to two rebases (three commit attempts total). `COPY` appends its new partition metadata to
+the latest schema without writing the CSV rows a second time. `DELETE` recomputes its rewrite set and
+predicate results against a fresh snapshot before trying again. A conflict after the final attempt is
+returned to the caller. Bytes written by an attempt that is not ultimately published are unreferenced
+orphans; a rebased `DELETE` may append another set of rewritten partitions.
 
 Partition appends to the shared table data file are separately serialized by a storage write lock so
 concurrent writers cannot interleave their bytes. The append lock is released before commit
 validation, allowing writers based on the same snapshot to reach commit and detect the conflict.
+`COPY` rebase reuses the original append offsets; `DELETE` rebase may append another rewrite after
+re-reading the new committed state.
 `close()` synchronizes on the commit monitor while saving the final catalog, so catalog serialization
 does not overlap a metadata commit.
 
@@ -71,7 +77,9 @@ start** — inside `Executor.execute(statement)`, before `binder.bind(statement)
 snapshot reference is passed through binding and execution. For `SELECT`, `Planner` uses only this
 snapshot for schema, statistics, and partition selection, and each scan reads partitions from the
 same snapshot rather than looking the table up again in the live map. `COPY` and `DELETE` also build
-from the pinned schema. `CREATE TABLE` has no prior table version to pin.
+from the pinned schema on their initial attempt. If a DML commit conflicts, `COPY` merges its append
+onto the current schema and `DELETE` pins a fresh snapshot and recomputes; `CREATE TABLE` has no prior
+table version to pin.
 
 ## 4. Retention
 

@@ -47,6 +47,7 @@ public final class StorageEngine implements AutoCloseable {
     // read
     // performance and memory usage
     private static final int DEFAULT_MAX_ROWS_PER_PARTITION = 10_240;
+    private static final int MAX_COMMIT_ATTEMPTS = 3;
 
     // objectmapper used to read and write the catalog json file,
     private static final ObjectMapper MAPPER = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
@@ -262,17 +263,9 @@ public final class StorageEngine implements AutoCloseable {
             }
         }
 
-        // commits a new TableSchema version: the existing partitions plus the ones
-        // this call just wrote, in one reference swap into `tables`
-        List<PartitionInfo> allPartitions = new ArrayList<>(schema.partitions);
-        allPartitions.addAll(newPartitions);
-
-        TableSchema updated = new TableSchema();
-        updated.columns = schema.columns;
-        updated.dataFile = dataFileName;
-        updated.partitions = allPartitions;
-        updated.version = schema.version + 1;
-        commitSchema(tableName, schema.version, updated);
+        // The bytes are appended once. If another writer commits first, merge these
+        // partition entries onto its schema rather than appending the rows again.
+        TableSchema updated = commitCopy(tableName, schema, dataFileName, newPartitions);
 
         // logs the completion of the copy operation with the table name, CSV file name,
         // total number of rows copied, number of partitions created,
@@ -437,6 +430,23 @@ public final class StorageEngine implements AutoCloseable {
     }
 
     public DeleteResult delete(TableSnapshot snapshot, Optional<Predicate> predicate) {
+        String tableName = snapshot.tableName;
+        TableSnapshot attemptSnapshot = snapshot;
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return deleteAtSnapshot(attemptSnapshot, predicate);
+            } catch (ConflictException conflict) {
+                if (attempt >= MAX_COMMIT_ATTEMPTS) {
+                    throw conflict;
+                }
+                attemptSnapshot = snapshot(tableName);
+                LOGGER.warn("rebasing table={} operation=DELETE base={} current={} attempt={}",
+                        tableName, conflict.baseVersion(), attemptSnapshot.version(), attempt + 1);
+            }
+        }
+    }
+
+    private DeleteResult deleteAtSnapshot(TableSnapshot snapshot, Optional<Predicate> predicate) {
         ensureSession();
         String tableName = snapshot.tableName;
         TableSchema schema = snapshot.schema;
@@ -865,6 +875,32 @@ public final class StorageEngine implements AutoCloseable {
                 throw new ConflictException(tableName, baseVersion, current.version);
             }
             publishSchema(tableName, updated);
+        }
+    }
+
+    private TableSchema commitCopy(String tableName, TableSchema base, String dataFileName,
+            List<PartitionInfo> appendedPartitions) {
+        TableSchema commitBase = base;
+        for (int attempt = 1; ; attempt++) {
+            List<PartitionInfo> allPartitions = new ArrayList<>(commitBase.partitions);
+            allPartitions.addAll(appendedPartitions);
+
+            TableSchema updated = new TableSchema();
+            updated.columns = commitBase.columns;
+            updated.dataFile = commitBase.dataFile == null ? dataFileName : commitBase.dataFile;
+            updated.partitions = allPartitions;
+            updated.version = commitBase.version + 1;
+            try {
+                commitSchema(tableName, commitBase.version, updated);
+                return updated;
+            } catch (ConflictException conflict) {
+                if (attempt >= MAX_COMMIT_ATTEMPTS) {
+                    throw conflict;
+                }
+                commitBase = snapshot(tableName).schema;
+                LOGGER.warn("rebasing table={} operation=COPY base={} current={} attempt={}",
+                        tableName, conflict.baseVersion(), commitBase.version, attempt + 1);
+            }
         }
     }
 
