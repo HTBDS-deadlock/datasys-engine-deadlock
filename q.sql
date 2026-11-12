@@ -17,3 +17,6 @@ FROM 'customers.csv';
 CREATE TABLE cities (ct_city STRING, ct_country STRING, ct_population LONG);
 COPY cities
 FROM 'cities.csv';
+
+SELECT * FROM orders, customers WHERE o_custname = c_name;
+
