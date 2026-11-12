@@ -38,6 +38,15 @@ public final class Engine {
                 if (!sqlText.endsWith(";")) {
                     sqlText += ";";
                 }
+            } else if (args.length >= 1 && args[0].equals("--web")) {
+                // Local browser front end; keeps running until Ctrl+C.
+                int port = args.length >= 2 ? Integer.parseInt(args[1]) : 8080;
+                try {
+                    WebServer.start(port);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                return;
             } else if (args.length == 2 && args[0].equals("-f")) {
                 // SQL input with a file as argument 2.
                 sqlText = readScript(args[1]);
@@ -92,6 +101,7 @@ public final class Engine {
         System.out.println("Usage:");
         System.out.println("  ./engine -c \"<sql statement>\"");
         System.out.println("  ./engine -f <path-to-script.sql>");
+        System.out.println("  ./engine --web [port]          (browser UI, default port 8080)");
 
         /*
          * 
