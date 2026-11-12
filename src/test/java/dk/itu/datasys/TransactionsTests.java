@@ -443,7 +443,9 @@ class TransactionsTests {
         } finally {
             System.setOut(originalOut);
         }
-        return out.toString(StandardCharsets.UTF_8);
+        // println writes the platform line separator (\r\n on Windows); the
+        // expected text block uses \n.
+        return out.toString(StandardCharsets.UTF_8).replace("\r\n", "\n");
     }
 
     private static void deleteRecursively(Path path) throws IOException {

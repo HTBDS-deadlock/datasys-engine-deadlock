@@ -82,6 +82,10 @@ public final class Binder {
                 .toList();
         JoinedSchema joinedSchema = new JoinedSchema(stmt.aliases(), perTableSchema);
 
+        for (JoinPredicate join : stmt.joins()) {
+            bindJoin(join, joinedSchema);
+        }
+
         if (stmt.tables().size() > 1) {
             // Throws unless the join predicates fold left-to-right unambiguously.
             joinedSchema.resolveFoldOrder(stmt.joins());
@@ -94,6 +98,26 @@ public final class Binder {
 
         for (String column : stmt.columns()) {
             joinedSchema.tableIndexOf(column); // throws if unknown or ambiguous
+        }
+    }
+
+    /**
+     * Both sides must exist, sit in two different tables, and have the same
+     * type. The hash join compares keys with equals(), so LONG 3 and DOUBLE 3.0
+     * would never match; rejecting is clearer than silently returning no rows.
+     */
+    private void bindJoin(JoinPredicate join, JoinedSchema joinedSchema) {
+        int leftTable = joinedSchema.tableIndexOf(join.leftColumn());
+        int rightTable = joinedSchema.tableIndexOf(join.rightColumn());
+        if (leftTable == rightTable) {
+            throw new IllegalArgumentException("Join predicate " + join.leftColumn() + " = " + join.rightColumn()
+                    + " compares two columns of the same table; a join must connect two different tables");
+        }
+        ColumnType leftType = joinedSchema.columnSpec(join.leftColumn()).type();
+        ColumnType rightType = joinedSchema.columnSpec(join.rightColumn()).type();
+        if (leftType != rightType) {
+            throw new IllegalArgumentException("Join predicate " + join.leftColumn() + " = " + join.rightColumn()
+                    + " compares " + leftType + " with " + rightType + "; both sides must have the same type");
         }
     }
 

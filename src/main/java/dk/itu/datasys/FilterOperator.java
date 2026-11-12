@@ -46,6 +46,11 @@ public final class FilterOperator implements Operator {
                 predicate.columnName(), predicate.comparison(), predicate.constant(), rowsIn, rowsOut);
     }
 
+    /** The child operator; package-private so tests can inspect a plan's shape. */
+    Operator child() {
+        return child;
+    }
+
     private int resolveColumnIndex() {
         for (int i = 0; i < schema.size(); i++) {
             if (schema.get(i).name().equals(predicate.columnName())) {

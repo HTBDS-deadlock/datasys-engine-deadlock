@@ -107,8 +107,18 @@ public final class HashJoinOperator implements Operator {
     @Override
     public void close() {
         probe.close();
-        LOGGER.debug("buildColumn={} probeColumn={} buildRows={} probeRows={} rowsOut={}",
+        LOGGER.debug("buildColumn={} probeColumn={} rowsBuild={} rowsProbe={} rowsOut={}",
                 buildColumn, probeColumn, buildRowCount, probeRowCount, rowsOut);
+    }
+
+    /** The build child; package-private so tests can inspect a plan's shape. */
+    Operator build() {
+        return build;
+    }
+
+    /** The probe child; package-private so tests can inspect a plan's shape. */
+    Operator probe() {
+        return probe;
     }
 
     private static Object[] combine(Object[] buildRow, Object[] probeRow) {
