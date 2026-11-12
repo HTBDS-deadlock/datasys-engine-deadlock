@@ -1,6 +1,8 @@
 package dk.itu.datasys;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Collectors;
 
 public final class SqlPrinter {
@@ -26,12 +28,21 @@ public final class SqlPrinter {
     }
 
     private String printSelect(SelectStatement stmt) {
-        String columns = stmt.columns()
-                .map(names -> String.join(", ", names))
-                .orElse("*");
-        String sql = "SELECT " + columns + " FROM " + stmt.tableName();
-        if (stmt.filters().isPresent()) {
-            sql += " WHERE " + printPredicate(stmt.filters().get());
+        String columns = stmt.columns().isEmpty() ? "*" : String.join(", ", stmt.columns());
+        String tables = stmt.tables().stream()
+                .map(t -> t.alias().equals(t.name()) ? t.name() : t.name() + " " + t.alias())
+                .collect(Collectors.joining(", "));
+        String sql = "SELECT " + columns + " FROM " + tables;
+
+        List<String> conditions = new ArrayList<>();
+        for (Predicate filter : stmt.filters()) {
+            conditions.add(printPredicate(filter));
+        }
+        for (JoinPredicate join : stmt.joins()) {
+            conditions.add(join.leftColumn() + " = " + join.rightColumn());
+        }
+        if (!conditions.isEmpty()) {
+            sql += " WHERE " + String.join(" AND ", conditions);
         }
         return sql + ";";
     }

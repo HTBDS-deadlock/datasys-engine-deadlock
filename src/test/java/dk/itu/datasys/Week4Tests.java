@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Optional;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -153,20 +152,20 @@ class Week4Tests {
         // three all have max <= 200 and must be pruned.
         StorageEngine engine = sortedTripsEngine(dataDirectory);
         Planner planner = new Planner(engine);
-        SelectStatement statement = new SelectStatement("trips", Optional.empty(),
-                Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)));
+        SelectStatement statement = new SelectStatement(List.of("trips"),
+                List.of(new Predicate("distance", Comparison.GREATER_THAN, 200L)), List.of());
 
         Plan plan = planner.plan(statement);
 
-        assertEquals(new ScanStats(4, 1, 3), plan.stats());
+        assertEquals(List.of(new ScanStats(4, 1, 3)), plan.stats());
     }
 
     @Test
     void plannerShapeWithWhereIsFilterOverScan(@TempDir Path dataDirectory) throws IOException {
         StorageEngine engine = sortedTripsEngine(dataDirectory);
         Planner planner = new Planner(engine);
-        SelectStatement statement = new SelectStatement("trips", Optional.empty(),
-                Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)));
+        SelectStatement statement = new SelectStatement(List.of("trips"),
+                List.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)), List.of());
 
         Plan plan = planner.plan(statement);
 
@@ -177,12 +176,12 @@ class Week4Tests {
     void plannerShapeWithoutWhereIsBareScanOverAllPartitions(@TempDir Path dataDirectory) throws IOException {
         StorageEngine engine = sortedTripsEngine(dataDirectory);
         Planner planner = new Planner(engine);
-        SelectStatement statement = new SelectStatement("trips", Optional.empty(), Optional.empty());
+        SelectStatement statement = new SelectStatement(List.of("trips"), List.of(), List.of());
 
         Plan plan = planner.plan(statement);
 
         assertInstanceOf(ScanOperator.class, plan.root());
-        assertEquals(new ScanStats(4, 4, 0), plan.stats());
+        assertEquals(List.of(new ScanStats(4, 4, 0)), plan.stats());
     }
 
     // ------------------------------------------------------------------

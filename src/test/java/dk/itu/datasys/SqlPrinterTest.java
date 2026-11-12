@@ -26,60 +26,64 @@ class SqlPrinterTest {
 
     @Test
     void roundTrips_selectWithoutWhere() {
-        assertRoundTrips(new SelectStatement("trips", Optional.empty(), Optional.empty()));
+        assertRoundTrips(new SelectStatement(List.of("trips"), List.of(), List.of()));
     }
 
     @Test
     void roundTrips_selectWithStringPredicate() {
-        assertRoundTrips(new SelectStatement("trips", Optional.empty(),
-                Optional.of(new Predicate("city", Comparison.EQUALS, "Copenhagen"))));
+        assertRoundTrips(new SelectStatement(List.of("trips"),
+                List.of(new Predicate("city", Comparison.EQUALS, "Copenhagen")), List.of()));
     }
 
     @Test
     void roundTrips_selectWithLongPredicate() {
-        assertRoundTrips(new SelectStatement("trips", Optional.empty(),
-                Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L))));
+        assertRoundTrips(new SelectStatement(List.of("trips"),
+                List.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)), List.of()));
     }
 
     @Test
     void roundTrips_selectWithDoublePredicate() {
-        assertRoundTrips(new SelectStatement("trips", Optional.empty(),
-                Optional.of(new Predicate("price", Comparison.LESS_THAN, 50.0))));
+        assertRoundTrips(new SelectStatement(List.of("trips"),
+                List.of(new Predicate("price", Comparison.LESS_THAN, 50.0)), List.of()));
     }
 
     @Test
     void roundTrips_selectWithNegativeLongPredicate() {
-        assertRoundTrips(new SelectStatement("trips", Optional.empty(),
-                Optional.of(new Predicate("distance", Comparison.EQUALS, -1L))));
+        assertRoundTrips(new SelectStatement(List.of("trips"),
+                List.of(new Predicate("distance", Comparison.EQUALS, -1L)), List.of()));
     }
 
     @Test
     void roundTrips_selectWithNegativeDoublePredicate() {
-        assertRoundTrips(new SelectStatement("trips", Optional.empty(),
-                Optional.of(new Predicate("price", Comparison.EQUALS, -1.5))));
+        assertRoundTrips(new SelectStatement(List.of("trips"),
+                List.of(new Predicate("price", Comparison.EQUALS, -1.5)), List.of()));
     }
 
     @Test
     void roundTrips_selectWithSmallDoublePredicate() {
-        assertRoundTrips(new SelectStatement("trips", Optional.empty(),
-                Optional.of(new Predicate("price", Comparison.EQUALS, 0.0000001))));
+        assertRoundTrips(new SelectStatement(List.of("trips"),
+                List.of(new Predicate("price", Comparison.EQUALS, 0.0000001)), List.of()));
     }
 
     @Test
     void roundTrips_selectWithLargeDoublePredicate() {
-        assertRoundTrips(new SelectStatement("trips", Optional.empty(),
-                Optional.of(new Predicate("price", Comparison.EQUALS, 100000000000000000.0))));
+        assertRoundTrips(new SelectStatement(List.of("trips"),
+                List.of(new Predicate("price", Comparison.EQUALS, 100000000000000000.0)), List.of()));
     }
 
     @Test
-    void roundTrips_selectWithSingleColumn() {
-        assertRoundTrips(new SelectStatement("trips", Optional.of(List.of("city")), Optional.empty()));
+    void roundTrips_selectWithAndChainOfFilters() {
+        assertRoundTrips(new SelectStatement(List.of("trips"),
+                List.of(new Predicate("city", Comparison.EQUALS, "Copenhagen"),
+                        new Predicate("distance", Comparison.GREATER_THAN, 100L)),
+                List.of()));
     }
 
     @Test
-    void roundTrips_selectWithColumnListAndPredicate() {
-        assertRoundTrips(new SelectStatement("trips", Optional.of(List.of("city", "price")),
-                Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L))));
+    void roundTrips_selectWithMultipleTablesAndJoin() {
+        assertRoundTrips(new SelectStatement(List.of("trips", "drivers"),
+                List.of(new Predicate("city", Comparison.EQUALS, "Copenhagen")),
+                List.of(new JoinPredicate("driver_id", "id"))));
     }
 
     @Test

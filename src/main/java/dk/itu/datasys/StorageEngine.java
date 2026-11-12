@@ -370,8 +370,8 @@ public final class StorageEngine implements AutoCloseable {
         // the table exists, the column exists, and the constant's type matches the
         // column's type (same checks and error messages as before the planner
         // refactor).
-        SelectStatement statement = new SelectStatement(tableName, Optional.empty(),
-                Optional.of(new Predicate(columnName, comparison, constant)));
+        SelectStatement statement = new SelectStatement(List.of(tableName),
+                List.of(new Predicate(columnName, comparison, constant)), List.of());
         TableSnapshot snapshot = snapshot(tableName);
         new Binder(this).bind(statement, Optional.of(snapshot));
 
@@ -385,13 +385,13 @@ public final class StorageEngine implements AutoCloseable {
         Plan plan = new Planner(this).plan(statement, snapshot);
         // Plan: which tree, what to read, which algorithm, which order, how much
         List<Object[]> results = Operator.drain(plan.root());
-        lastScanStats = plan.stats();
+        lastScanStats = plan.stats().get(0);
 
         long durationMs = System.currentTimeMillis() - start;
         LOGGER.debug(
                 "table={} column={} comparison={} const={} partitionsRead={} partitionsPruned={} rowsOut={} version={} durationMs={}",
-                tableName, columnName, comparison, constant, plan.stats().partitionsRead(),
-                plan.stats().partitionsPruned(), results.size(), version, durationMs);
+                tableName, columnName, comparison, constant, lastScanStats.partitionsRead(),
+                lastScanStats.partitionsPruned(), results.size(), version, durationMs);
 
         return results;
     }
