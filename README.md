@@ -22,6 +22,16 @@ COPY trips FROM 'src/test/resources/trips.csv';"
 ./engine -f q.sql             # run a script file
 ```
 
+### Web UI
+
+```bash
+./engine --web          # then open http://localhost:8080  (./engine --web 9000 for another port)
+```
+
+A single text field for SQL (Ctrl+Enter runs it) and DuckDB-style result tables.
+It runs through the same `Executor` as the CLI and uses the same `./data`, and it
+only listens on localhost. The page lives in [web/index.html](web/index.html).
+
 `SELECT` rows are printed to stdout as CSV; logs go to stderr and `logs/engine.log`.
 Tables are stored in `./data` and persist between runs; delete it to start over.
 Building without `-DskipTests` runs the tests, which delete `./data`.

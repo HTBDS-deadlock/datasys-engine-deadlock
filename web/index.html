@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deadlock SQL</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useRef } = React;
+
+const STORAGE_KEY = 'deadlock-sql';
+
+function loadSaved() {
+  try { return localStorage.getItem(STORAGE_KEY) || ''; } catch (e) { return ''; }
+}
+
+function save(sql) {
+  try { localStorage.setItem(STORAGE_KEY, sql); } catch (e) {}
+}
+
+/** POSTs the SQL to the engine; resolves to { results, error, durationMs }. */
+async function runQuery(sql) {
+  const response = await fetch('/query', { method: 'POST', body: sql });
+  if (!response.ok) throw new Error('Server answered ' + response.status);
+  return response.json();
+}
+
+function App() {
+  const [sql, setSql] = useState(loadSaved);
+  const [response, setResponse] = useState(null);
+  const [failure, setFailure] = useState(null);
+  const [running, setRunning] = useState(false);
+
+  async function run() {
+    const text = sql.trim();
+    if (!text || running) return;
+    save(sql);
+    setRunning(true);
+    setFailure(null);
+    try {
+      setResponse(await runQuery(text));
+    } catch (e) {
+      setResponse(null);
+      setFailure('Could not reach the engine: ' + e.message + '\nIs the web server still running?');
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <h1>Deadlock</h1>
+        <span className="tag">SQL</span>
+      </header>
+
+      <Editor sql={sql} onChange={setSql} onRun={run} running={running}
+              durationMs={response ? response.durationMs : null} />
+
+      {failure && <div className="results"><div className="error">{failure}</div></div>}
+      {response && <Results response={response} />}
+      {!response && !failure && (
+        <p className="placeholder">Write SQL above and press Run. Separate several statements with ;</p>
+      )}
+    </div>
+  );
+}
+
+function Editor({ sql, onChange, onRun, running, durationMs }) {
+  function onKeyDown(event) {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      onRun();
+    }
+  }
+
+  return (
+    <section className="card editor">
+      <textarea
+        value={sql}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        spellCheck={false}
+        autoFocus
+        placeholder="SELECT * FROM orders, customers WHERE o_custname = c_name;"
+      />
+      <div className="toolbar">
+        <button className="button" onClick={onRun} disabled={running}>
+          {running ? 'Running…' : 'Run'}
+        </button>
+        <span className="hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to run</span>
+        {durationMs !== null && !running && <span className="status">{durationMs} ms</span>}
+      </div>
+    </section>
+  );
+}
+
+function Results({ response }) {
+  return (
+    <div className="results">
+      {response.results.map((result, i) => <Result key={i} result={result} />)}
+      {response.error && <ErrorBox error={response.error} />}
+    </div>
+  );
+}
+
+function Result({ result }) {
+  const isSelect = Array.isArray(result.rows);
+  const count = isSelect ? result.rows.length : 0;
+
+  return (
+    <section className="card">
+      <div className="result-header">
+        <span className="sql" title={result.sql}>{result.sql}</span>
+        {isSelect
+          ? <span className="meta">{count} {count === 1 ? 'row' : 'rows'}</span>
+          : <span className="meta ok">{result.message}</span>}
+      </div>
+      {isSelect && <ResultTable result={result} />}
+    </section>
+  );
+}
+
+function ResultTable({ result }) {
+  if (result.rows.length === 0) {
+    return <div className="empty-rows">No rows.</div>;
+  }
+  const numeric = result.numeric || [];
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {result.columns.map((name, i) => (
+              <th key={i} className={numeric[i] ? 'num' : undefined}>{name}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {result.rows.map((row, r) => (
+            <tr key={r}>
+              {row.map((value, c) => {
+                if (value === null || value === 'null') return <td key={c} className="null">NULL</td>;
+                return <td key={c} className={numeric[c] ? 'num' : undefined}>{value}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ErrorBox({ error }) {
+  const message = error.line !== undefined
+    ? `Syntax error at line ${error.line}, column ${error.column + 1}: ${error.message}`
+    : error.message;
+  return <div className="error">{message}</div>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,16 +32,26 @@ public final class Executor {
     }
 
     public List<ExecutionResult> run(String sqlText) {
+        List<ExecutionResult> results = new ArrayList<>();
+        run(sqlText, results::add);
+        return results;
+    }
+
+    /**
+     * Like run(String), but hands each statement's result to onResult as soon
+     * as that statement finishes, so a caller still has the results of the
+     * statements before a failing one.
+     */
+    public void run(String sqlText, Consumer<ExecutionResult> onResult) {
         // Script-level parsing happens before the counter starts, so it keeps
         // the 0 set at engine startup.
         int statementNumber = 0;
         List<Statement> statements = parser.parse(sqlText);
-        List<ExecutionResult> results = new ArrayList<>(statements.size());
         try {
             for (Statement statement : statements) {
                 MDC.put("statementNumber", String.valueOf(++statementNumber));
                 try {
-                    results.add(execute(statement));
+                    onResult.accept(execute(statement));
                 } catch (RuntimeException e) {
                     LOGGER.error("Statement failed reason ={}", e.getMessage());
                     throw e;
@@ -51,7 +62,6 @@ public final class Executor {
             // are outside the count again.
             MDC.put("statementNumber", "0");
         }
-        return results;
     }
 
     private ExecutionResult execute(Statement statement) {
