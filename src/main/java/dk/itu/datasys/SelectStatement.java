@@ -1,9 +1,12 @@
 package dk.itu.datasys;
 
 import java.util.List;
-import java.util.Optional;
 
-/** columns is empty for SELECT *, or the requested column names in order. */
-public record SelectStatement(String tableName, Optional<List<String>> columns, Optional<Predicate> filters)
+/**
+ * filters are column-vs-constant predicates (each binds to exactly one
+ * table); joins are column-vs-column predicates. Both lists are AND-ed
+ * together; there is no OR and no parentheses.
+ */
+public record SelectStatement(List<String> tableNames, List<Predicate> filters, List<JoinPredicate> joins)
         implements Statement {
 }

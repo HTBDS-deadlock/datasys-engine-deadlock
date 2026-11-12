@@ -181,7 +181,7 @@ class TransactionsTests {
             engine.copyFile("trips", csv.toString());
             StorageEngine.TableSnapshot copiedVersion = engine.snapshot("trips", 1);
 
-            SelectStatement select = new SelectStatement("trips", Optional.empty(), Optional.empty());
+            SelectStatement select = new SelectStatement(List.of("trips"), List.of(), List.of());
             new Binder(engine).bind(select, Optional.of(copiedVersion));
             Plan plan = new Planner(engine).plan(select, copiedVersion);
             Operator scan = plan.root();

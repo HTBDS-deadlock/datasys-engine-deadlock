@@ -27,23 +27,38 @@ class SqlParserSmokeTest {
         assertInstanceOf(CopyStatement.class, statements.get(1));
 
         SelectStatement withPredicate = (SelectStatement) statements.get(2);
-        assertEquals("trips", withPredicate.tableName());
-        assertTrue(withPredicate.columns().isEmpty());
-        assertEquals(Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)), withPredicate.filters());
+        assertEquals(List.of("trips"), withPredicate.tableNames());
+        assertEquals(List.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)), withPredicate.filters());
+        assertTrue(withPredicate.joins().isEmpty());
 
         SelectStatement withoutPredicate = (SelectStatement) statements.get(3);
-        assertTrue(withoutPredicate.columns().isEmpty());
         assertTrue(withoutPredicate.filters().isEmpty());
+        assertTrue(withoutPredicate.joins().isEmpty());
     }
 
     @Test
-    void parsesColumnListInSelect() {
-        List<Statement> statements = new SqlParser().parse("SELECT city, price FROM trips WHERE distance > 100;");
+    void parsesAndChainOfFilters() {
+        List<Statement> statements = new SqlParser()
+                .parse("SELECT * FROM trips WHERE distance > 100 AND city = 'Copenhagen';");
 
         SelectStatement select = (SelectStatement) statements.get(0);
-        assertEquals("trips", select.tableName());
-        assertEquals(Optional.of(List.of("city", "price")), select.columns());
-        assertEquals(Optional.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)), select.filters());
+        assertEquals(List.of("trips"), select.tableNames());
+        assertEquals(List.of(
+                new Predicate("distance", Comparison.GREATER_THAN, 100L),
+                new Predicate("city", Comparison.EQUALS, "Copenhagen")),
+                select.filters());
+        assertTrue(select.joins().isEmpty());
+    }
+
+    @Test
+    void parsesTableListAndJoinPredicate() {
+        List<Statement> statements = new SqlParser()
+                .parse("SELECT * FROM trips, drivers WHERE distance > 100 AND driver_id = id;");
+
+        SelectStatement select = (SelectStatement) statements.get(0);
+        assertEquals(List.of("trips", "drivers"), select.tableNames());
+        assertEquals(List.of(new Predicate("distance", Comparison.GREATER_THAN, 100L)), select.filters());
+        assertEquals(List.of(new JoinPredicate("driver_id", "id")), select.joins());
     }
 
     @Test
@@ -87,7 +102,7 @@ class SqlParserSmokeTest {
     }
 
     private Object filterConstant(Statement statement) {
-        return ((SelectStatement) statement).filters().orElseThrow().constant();
+        return ((SelectStatement) statement).filters().get(0).constant();
     }
 
     @Test
@@ -95,7 +110,7 @@ class SqlParserSmokeTest {
         List<Statement> statements = new SqlParser().parse("select * from Trips;");
 
         SelectStatement select = (SelectStatement) statements.get(0);
-        assertEquals("Trips", select.tableName());
+        assertEquals(List.of("Trips"), select.tableNames());
     }
 
     @Test

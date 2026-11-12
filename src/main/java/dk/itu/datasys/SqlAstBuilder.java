@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,34 +28,36 @@ public class SqlAstBuilder extends sqlBaseVisitor<Statement> {
 
     @Override
     public Statement visitSelect(sqlParser.SelectContext ctx) {
-        // SelectContext : SELECT, FROM, IDENTIFIER, WHERE etc.
-        String tableName = ctx.IDENTIFIER().getText();
-        Optional<List<String>> columns = buildColumnList(ctx.selectList());
-        Optional<Predicate> filters = ctx.predicate() != null
-                ? Optional.of(buildPredicate(ctx.predicate()))
-                : Optional.empty();
-        return new SelectStatement(tableName, columns, filters);
+        List<String> tableNames = ctx.IDENTIFIER().stream().map(TerminalNode::getText).toList();
+
+        List<Predicate> filters = new ArrayList<>();
+        List<JoinPredicate> joins = new ArrayList<>();
+        if (ctx.condition() != null) {
+            for (sqlParser.PredicateContext predicateCtx : ctx.condition().predicate()) {
+                if (predicateCtx.filter() != null) {
+                    filters.add(buildFilter(predicateCtx.filter()));
+                } else {
+                    joins.add(buildJoinPredicate(predicateCtx.join()));
+                }
+            }
+        }
+        return new SelectStatement(tableNames, filters, joins);
     }
 
     @Override
     public Statement visitDelete(sqlParser.DeleteContext ctx) {
         String tableName = ctx.IDENTIFIER().getText();
-        Optional<Predicate> where = ctx.predicate() != null
-                ? Optional.of(buildPredicate(ctx.predicate()))
+        Optional<Predicate> where = ctx.filter() != null
+                ? Optional.of(buildFilter(ctx.filter()))
                 : Optional.empty();
         return new DeleteStatement(tableName, where);
     }
 
-    private Optional<List<String>> buildColumnList(sqlParser.SelectListContext ctx) {
-        if (ctx instanceof sqlParser.ColumnListContext columnList) {
-            return Optional.of(columnList.IDENTIFIER().stream()
-                    .map(TerminalNode::getText)
-                    .toList());
-        }
-        return Optional.empty();
+    private JoinPredicate buildJoinPredicate(sqlParser.JoinContext ctx) {
+        return new JoinPredicate(ctx.left.getText(), ctx.right.getText());
     }
 
-    private Predicate buildPredicate(sqlParser.PredicateContext ctx) {
+    private Predicate buildFilter(sqlParser.FilterContext ctx) {
         String columnName = ctx.IDENTIFIER().getText();
         Comparison comparison = switch (ctx.comparison.getText()) {
             case "=" -> Comparison.EQUALS;

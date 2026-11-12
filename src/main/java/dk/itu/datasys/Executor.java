@@ -1,7 +1,9 @@
 package dk.itu.datasys;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -58,9 +60,12 @@ public final class Executor {
         String columnsWithoutCommas = str.replace(",", "");
 
         LOGGER.debug("executing statement={}", columnsWithoutCommas);
-        Optional<StorageEngine.TableSnapshot> snapshot =
-                engine.snapshotIfPresent(tableName(statement));
-        binder.bind(statement, snapshot);
+        // Pinned once per table, at statement start, before binding or planning.
+        Map<String, StorageEngine.TableSnapshot> snapshots = new LinkedHashMap<>();
+        for (String tableName : tableNames(statement)) {
+            engine.snapshotIfPresent(tableName).ifPresent(snapshot -> snapshots.put(tableName, snapshot));
+        }
+        binder.bind(statement, snapshots);
         long start = System.currentTimeMillis();
         Optional<List<Object[]>> rows = switch (statement) {
             case CreateTableStatement s -> {
@@ -71,14 +76,14 @@ public final class Executor {
                 yield Optional.empty();
             }
             case CopyStatement s -> {
-                CopyResult result = engine.copyFile(snapshot.orElseThrow(), s.csvFilePath());
+                CopyResult result = engine.copyFile(snapshots.get(s.tableName()), s.csvFilePath());
                 LOGGER.debug("statement=COPY table={} rows={} partitions={} version={} durationMs={}",
                         s.tableName(), result.rows(), result.partitions(), result.version(),
                         System.currentTimeMillis() - start);
                 yield Optional.empty();
             }
             case DeleteStatement s -> {
-                DeleteResult result = engine.delete(snapshot.orElseThrow(), s.where());
+                DeleteResult result = engine.delete(snapshots.get(s.tableName()), s.where());
                 LOGGER.debug(
                         "statement=DELETE table={} rowsDeleted={} partitionsRewritten={} partitionsCarried={} version={} durationMs={}",
                         s.tableName(), result.rowsDeleted(), result.partitionsRewritten(),
@@ -86,26 +91,26 @@ public final class Executor {
                 yield Optional.empty();
             }
             case SelectStatement s -> {
-                StorageEngine.TableSnapshot pinned = snapshot.orElseThrow();
-                int version = pinned.version();
-                Plan plan = planner.plan(s, pinned);
+                Plan plan = planner.plan(s, snapshots);
                 List<Object[]> result = Operator.drain(plan.root());
+                int partitionsRead = plan.stats().stream().mapToInt(ScanStats::partitionsRead).sum();
+                int partitionsPruned = plan.stats().stream().mapToInt(ScanStats::partitionsPruned).sum();
                 LOGGER.debug(
-                        "statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
-                        s.tableName(), result.size(), plan.stats().partitionsRead(),
-                        plan.stats().partitionsPruned(), version, System.currentTimeMillis() - start);
+                        "statement=SELECT tables={} rowsOut={} partitionsRead={} partitionsPruned={} durationMs={}",
+                        s.tableNames(), result.size(), partitionsRead, partitionsPruned,
+                        System.currentTimeMillis() - start);
                 yield Optional.of(result);
             }
         };
         return new ExecutionResult(statement, rows);
     }
 
-    private static String tableName(Statement statement) {
+    private static List<String> tableNames(Statement statement) {
         return switch (statement) {
-            case CreateTableStatement s -> s.tableName();
-            case CopyStatement s -> s.tableName();
-            case DeleteStatement s -> s.tableName();
-            case SelectStatement s -> s.tableName();
+            case CreateTableStatement s -> List.of();
+            case CopyStatement s -> List.of(s.tableName());
+            case DeleteStatement s -> List.of(s.tableName());
+            case SelectStatement s -> s.tableNames();
         };
     }
 }
