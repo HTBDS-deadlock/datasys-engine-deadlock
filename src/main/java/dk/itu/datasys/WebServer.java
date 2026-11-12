@@ -49,18 +49,36 @@ public final class WebServer {
         System.err.println("Deadlock web UI running at http://localhost:" + port + "  (Ctrl+C to stop)");
     }
 
+    /** Serves the files in web/: "/" is web/index.html, "/styles.css" is web/styles.css, and so on. */
     private void handleIndex(HttpExchange exchange) throws IOException {
-        if (!exchange.getRequestURI().getPath().equals("/")) {
-            send(exchange, 404, "text/plain", "Not found");
-            return;
-        }
-        Path index = WEB_DIRECTORY.resolve("index.html");
-        if (!Files.exists(index)) {
+        if (!Files.exists(WEB_DIRECTORY.resolve("index.html"))) {
             send(exchange, 500, "text/plain",
                     "web/index.html not found; start the server from the project root");
             return;
         }
-        send(exchange, 200, "text/html; charset=utf-8", Files.readString(index));
+        String requested = exchange.getRequestURI().getPath();
+        String relative = requested.equals("/") ? "index.html" : requested.substring(1);
+
+        Path root = WEB_DIRECTORY.toAbsolutePath().normalize();
+        Path file = root.resolve(relative).normalize();
+        // Refuse anything outside web/, e.g. /../data/catalog.json.
+        if (!file.startsWith(root) || !Files.isRegularFile(file)) {
+            send(exchange, 404, "text/plain", "Not found");
+            return;
+        }
+        send(exchange, 200, contentType(file), Files.readAllBytes(file));
+    }
+
+    private static String contentType(Path file) {
+        String name = file.getFileName().toString().toLowerCase();
+        if (name.endsWith(".html")) return "text/html; charset=utf-8";
+        if (name.endsWith(".css")) return "text/css; charset=utf-8";
+        if (name.endsWith(".js") || name.endsWith(".jsx")) return "text/javascript; charset=utf-8";
+        if (name.endsWith(".json")) return "application/json; charset=utf-8";
+        if (name.endsWith(".svg")) return "image/svg+xml";
+        if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".ico")) return "image/x-icon";
+        return "application/octet-stream";
     }
 
     private void handleQuery(HttpExchange exchange) throws IOException {
@@ -135,7 +153,11 @@ public final class WebServer {
 
     private static void send(HttpExchange exchange, int status, String contentType, String body)
             throws IOException {
-        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        send(exchange, status, contentType, body.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void send(HttpExchange exchange, int status, String contentType, byte[] bytes)
+            throws IOException {
         exchange.getResponseHeaders().set("Content-Type", contentType);
         exchange.sendResponseHeaders(status, bytes.length);
         try (OutputStream out = exchange.getResponseBody()) {

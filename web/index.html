@@ -4,243 +4,168 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deadlock SQL</title>
-<style>
-  :root {
-    --bg: #fafaf9;
-    --panel: #ffffff;
-    --text: #1c1917;
-    --muted: #78716c;
-    --border: #e7e5e4;
-    --accent: #2563eb;
-    --accent-text: #ffffff;
-    --header-bg: #f5f5f4;
-    --error-bg: #fef2f2;
-    --error-border: #fca5a5;
-    --error-text: #991b1b;
-    --null: #a8a29e;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0c0a09;
-      --panel: #1c1917;
-      --text: #e7e5e4;
-      --muted: #a8a29e;
-      --border: #292524;
-      --accent: #3b82f6;
-      --accent-text: #ffffff;
-      --header-bg: #231f1d;
-      --error-bg: #2a1212;
-      --error-border: #7f1d1d;
-      --error-text: #fca5a5;
-      --null: #57534e;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 18px; margin: 0 0 16px; font-weight: 600; }
-  h1 span { color: var(--muted); font-weight: 400; }
-  .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
-
-  textarea {
-    width: 100%;
-    min-height: 140px;
-    resize: vertical;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-    color: var(--text);
-    font: 14px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
-    tab-size: 2;
-  }
-  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-
-  .bar { display: flex; align-items: center; gap: 12px; margin: 10px 0 24px; }
-  button {
-    background: var(--accent);
-    color: var(--accent-text);
-    border: 0;
-    border-radius: 6px;
-    padding: 8px 18px;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  button:disabled { opacity: .6; cursor: progress; }
-  .hint { color: var(--muted); font-size: 13px; }
-  .status { margin-left: auto; color: var(--muted); font-size: 13px; }
-
-  .result { margin-bottom: 20px; }
-  .result .sql {
-    color: var(--muted);
-    font-size: 12px;
-    margin-bottom: 6px;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .table-wrap {
-    overflow-x: auto;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-  }
-  table { border-collapse: collapse; width: max-content; min-width: 100%; }
-  th, td {
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--border);
-    text-align: left;
-    white-space: nowrap;
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-    font-size: 13px;
-  }
-  th { background: var(--header-bg); font-weight: 600; position: sticky; top: 0; }
-  tr:last-child td { border-bottom: 0; }
-  td.num { text-align: right; }
-  td.null { color: var(--null); font-style: italic; }
-  .count { color: var(--muted); font-size: 12px; margin-top: 4px; }
-  .ok {
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-    color: var(--muted);
-  }
-  .error {
-    padding: 10px 12px;
-    border: 1px solid var(--error-border);
-    border-radius: 8px;
-    background: var(--error-bg);
-    color: var(--error-text);
-    white-space: pre-wrap;
-  }
-</style>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
 </head>
 <body>
-<main>
-  <h1>Deadlock <span>SQL</span></h1>
+<div id="root"></div>
 
-  <textarea id="sql" class="mono" spellcheck="false"
-    placeholder="SELECT * FROM orders, customers WHERE o_custname = c_name;"></textarea>
+<script type="text/babel" data-presets="react">
+const { useState, useRef } = React;
 
-  <div class="bar">
-    <button id="run">Run</button>
-    <span class="hint">Ctrl+Enter to run · several statements separated by ;</span>
-    <span id="status" class="status"></span>
-  </div>
+const STORAGE_KEY = 'deadlock-sql';
 
-  <div id="output"></div>
-</main>
+function loadSaved() {
+  try { return localStorage.getItem(STORAGE_KEY) || ''; } catch (e) { return ''; }
+}
 
-<script>
-  const sqlInput = document.getElementById('sql');
-  const runButton = document.getElementById('run');
-  const statusLine = document.getElementById('status');
-  const output = document.getElementById('output');
+function save(sql) {
+  try { localStorage.setItem(STORAGE_KEY, sql); } catch (e) {}
+}
 
-  // Remember the last query in this browser (a convenience only).
-  try { sqlInput.value = localStorage.getItem('deadlock-sql') || ''; } catch (e) {}
+/** POSTs the SQL to the engine; resolves to { results, error, durationMs }. */
+async function runQuery(sql) {
+  const response = await fetch('/query', { method: 'POST', body: sql });
+  if (!response.ok) throw new Error('Server answered ' + response.status);
+  return response.json();
+}
 
-  runButton.addEventListener('click', run);
-  sqlInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      run();
-    }
-  });
+function App() {
+  const [sql, setSql] = useState(loadSaved);
+  const [response, setResponse] = useState(null);
+  const [failure, setFailure] = useState(null);
+  const [running, setRunning] = useState(false);
 
   async function run() {
-    const sql = sqlInput.value.trim();
-    if (!sql) return;
-    try { localStorage.setItem('deadlock-sql', sqlInput.value); } catch (e) {}
-
-    runButton.disabled = true;
-    statusLine.textContent = 'Running…';
-    let data;
+    const text = sql.trim();
+    if (!text || running) return;
+    save(sql);
+    setRunning(true);
+    setFailure(null);
     try {
-      const response = await fetch('/query', { method: 'POST', body: sql });
-      if (!response.ok) throw new Error('Server answered ' + response.status);
-      data = await response.json();
+      setResponse(await runQuery(text));
     } catch (e) {
-      output.replaceChildren(errorBox('Could not reach the engine: ' + e.message
-        + '\nIs ./engine --web still running?'));
-      statusLine.textContent = '';
-      runButton.disabled = false;
-      return;
-    }
-    try {
-      render(data);
-      statusLine.textContent = data.durationMs + ' ms';
-    } catch (e) {
-      // A bug in this page, not in the engine: say so instead of blaming the connection.
-      output.replaceChildren(errorBox('Could not display the result: ' + e.message));
+      setResponse(null);
+      setFailure('Could not reach the engine: ' + e.message + '\nIs the web server still running?');
     } finally {
-      runButton.disabled = false;
+      setRunning(false);
     }
   }
 
-  function render(data) {
-    const blocks = data.results.map(renderResult);
-    if (data.error) {
-      let message = data.error.message;
-      if (data.error.line !== undefined) {
-        message = 'Syntax error at line ' + data.error.line + ', column ' + (data.error.column + 1) + ': ' + message;
-      }
-      blocks.push(errorBox(message));
+  return (
+    <div className="app">
+      <header className="topbar">
+        <h1>Deadlock</h1>
+        <span className="tag">SQL</span>
+      </header>
+
+      <Editor sql={sql} onChange={setSql} onRun={run} running={running}
+              durationMs={response ? response.durationMs : null} />
+
+      {failure && <div className="results"><div className="error">{failure}</div></div>}
+      {response && <Results response={response} />}
+      {!response && !failure && (
+        <p className="placeholder">Write SQL above and press Run. Separate several statements with ;</p>
+      )}
+    </div>
+  );
+}
+
+function Editor({ sql, onChange, onRun, running, durationMs }) {
+  function onKeyDown(event) {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      onRun();
     }
-    output.replaceChildren(...blocks);
   }
 
-  function renderResult(result) {
-    const block = el('div', 'result');
-    block.append(el('div', 'sql mono', result.sql));
+  return (
+    <section className="card editor">
+      <textarea
+        value={sql}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        spellCheck={false}
+        autoFocus
+        placeholder="SELECT * FROM orders, customers WHERE o_custname = c_name;"
+      />
+      <div className="toolbar">
+        <button className="button" onClick={onRun} disabled={running}>
+          {running ? 'Running…' : 'Run'}
+        </button>
+        <span className="hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to run</span>
+        {durationMs !== null && !running && <span className="status">{durationMs} ms</span>}
+      </div>
+    </section>
+  );
+}
 
-    if (!result.rows) {
-      block.append(el('div', 'ok', result.message));
-      return block;
-    }
+function Results({ response }) {
+  return (
+    <div className="results">
+      {response.results.map((result, i) => <Result key={i} result={result} />)}
+      {response.error && <ErrorBox error={response.error} />}
+    </div>
+  );
+}
 
-    const table = el('table');
-    const headRow = el('tr');
-    result.columns.forEach((name) => headRow.append(el('th', null, name)));
-    const head = el('thead');
-    head.append(headRow);
-    table.append(head);
+function Result({ result }) {
+  const isSelect = Array.isArray(result.rows);
+  const count = isSelect ? result.rows.length : 0;
 
-    const body = el('tbody');
-    for (const row of result.rows) {
-      const tr = el('tr');
-      row.forEach((value, i) => {
-        if (value === null || value === 'null') tr.append(el('td', 'null', 'NULL'));
-        else tr.append(el('td', result.numeric[i] ? 'num' : null, value));
-      });
-      body.append(tr);
-    }
-    table.append(body);
+  return (
+    <section className="card">
+      <div className="result-header">
+        <span className="sql" title={result.sql}>{result.sql}</span>
+        {isSelect
+          ? <span className="meta">{count} {count === 1 ? 'row' : 'rows'}</span>
+          : <span className="meta ok">{result.message}</span>}
+      </div>
+      {isSelect && <ResultTable result={result} />}
+    </section>
+  );
+}
 
-    const wrap = el('div', 'table-wrap');
-    wrap.append(table);
-    block.append(wrap);
-    const n = result.rows.length;
-    block.append(el('div', 'count', n + (n === 1 ? ' row' : ' rows')));
-    return block;
+function ResultTable({ result }) {
+  if (result.rows.length === 0) {
+    return <div className="empty-rows">No rows.</div>;
   }
+  const numeric = result.numeric || [];
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {result.columns.map((name, i) => (
+              <th key={i} className={numeric[i] ? 'num' : undefined}>{name}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {result.rows.map((row, r) => (
+            <tr key={r}>
+              {row.map((value, c) => {
+                if (value === null || value === 'null') return <td key={c} className="null">NULL</td>;
+                return <td key={c} className={numeric[c] ? 'num' : undefined}>{value}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
-  function errorBox(message) {
-    return el('div', 'error', message);
-  }
+function ErrorBox({ error }) {
+  const message = error.line !== undefined
+    ? `Syntax error at line ${error.line}, column ${error.column + 1}: ${error.message}`
+    : error.message;
+  return <div className="error">{message}</div>;
+}
 
-  function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
-  }
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
