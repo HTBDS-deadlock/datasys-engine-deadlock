@@ -37,60 +37,64 @@ public final class Planner {
     }
 
     public Plan plan(SelectStatement statement, Map<String, StorageEngine.TableSnapshot> snapshots) {
-        if (statement.tableNames().size() == 1 && statement.joins().isEmpty()) {
-            ScanResult result = scanTable(snapshots.get(statement.tableNames().get(0)), statement.filters());
-            return new Plan(result.root(), List.of(result.stats()));
-        }
-        if (statement.tableNames().size() == 1) {
+        if (statement.tables().size() == 1 && !statement.joins().isEmpty()) {
             throw new UnsupportedOperationException("A single-table SELECT cannot have a join predicate");
         }
-        return planJoin(statement, snapshots);
-    }
 
-    private Plan planJoin(SelectStatement statement, Map<String, StorageEngine.TableSnapshot> snapshots) {
-        List<String> tableNames = statement.tableNames();
-        List<StorageEngine.TableSnapshot> tableSnapshots = tableNames.stream().map(snapshots::get).toList();
+        int tableCount = statement.tables().size();
+        // A self-join lists the same table twice; both occurrences read the same pinned snapshot.
+        List<StorageEngine.TableSnapshot> tableSnapshots = statement.tableNames().stream().map(snapshots::get)
+                .toList();
         List<List<ColumnSpec>> perTableSchema = tableSnapshots.stream().map(engine::schema).toList();
-        JoinedSchema joinedSchema = new JoinedSchema(tableNames, perTableSchema);
+        JoinedSchema joinedSchema = new JoinedSchema(statement.aliases(), perTableSchema);
 
         // Each filter binds to exactly one table; partition them that way so
-        // every table is pruned/scanned using only its own predicates.
+        // every table is pruned/scanned using only its own predicates. The
+        // pushed-down copy uses the bare column name, which is what the
+        // table's own schema and partition statistics know.
         List<List<Predicate>> filtersPerTable = new ArrayList<>();
-        for (int i = 0; i < tableNames.size(); i++) {
+        for (int i = 0; i < tableCount; i++) {
             filtersPerTable.add(new ArrayList<>());
         }
         for (Predicate predicate : statement.filters()) {
             int table = joinedSchema.tableIndexOf(predicate.columnName());
-            filtersPerTable.get(table).add(predicate);
+            filtersPerTable.get(table).add(new Predicate(JoinedSchema.bareName(predicate.columnName()),
+                    predicate.comparison(), predicate.constant()));
         }
-
-        // Throws unless the join predicates fold left-to-right unambiguously.
-        List<JoinPredicate> foldSteps = joinedSchema.resolveFoldOrder(statement.joins());
 
         List<ScanStats> stats = new ArrayList<>();
         ScanResult base = scanTable(tableSnapshots.get(0), filtersPerTable.get(0));
         stats.add(base.stats());
         Operator root = base.root();
-        List<ColumnSpec> joinedSoFarSchema = perTableSchema.get(0);
 
-        for (int i = 1; i < tableNames.size(); i++) {
-            ScanResult next = scanTable(tableSnapshots.get(i), filtersPerTable.get(i));
-            stats.add(next.stats());
+        if (tableCount > 1) {
+            // Throws unless the join predicates fold left-to-right unambiguously.
+            List<JoinPredicate> foldSteps = joinedSchema.resolveFoldOrder(statement.joins());
 
-            JoinPredicate predicate = foldSteps.get(i - 1);
-            // The side whose column belongs to the new table is the probe
-            // side; the other side (already in the joined set) is the build
-            // side -- the accumulated join so far is always the build side.
-            boolean leftIsNewTable = joinedSchema.tableIndexOf(predicate.leftColumn()) == i;
-            String probeColumn = leftIsNewTable ? predicate.leftColumn() : predicate.rightColumn();
-            String buildColumn = leftIsNewTable ? predicate.rightColumn() : predicate.leftColumn();
+            for (int i = 1; i < tableCount; i++) {
+                ScanResult next = scanTable(tableSnapshots.get(i), filtersPerTable.get(i));
+                stats.add(next.stats());
 
-            root = new HashJoinOperator(root, joinedSoFarSchema, buildColumn, next.root(), perTableSchema.get(i),
-                    probeColumn);
+                JoinPredicate predicate = foldSteps.get(i - 1);
+                // The side whose column belongs to the new table is the probe
+                // side; the other side (already in the joined set) is the build
+                // side -- the accumulated join so far is always the build side.
+                boolean leftIsNewTable = joinedSchema.tableIndexOf(predicate.leftColumn()) == i;
+                String probeColumn = leftIsNewTable ? predicate.leftColumn() : predicate.rightColumn();
+                String buildColumn = leftIsNewTable ? predicate.rightColumn() : predicate.leftColumn();
 
-            List<ColumnSpec> combined = new ArrayList<>(joinedSoFarSchema);
-            combined.addAll(perTableSchema.get(i));
-            joinedSoFarSchema = combined;
+                // Keys by position, not name: in a self-join the joined-so-far
+                // row holds the same column name twice. The joined-so-far row
+                // is a prefix of the full concatenated row, so its row index
+                // is valid here.
+                root = new HashJoinOperator(root, joinedSchema.rowIndexOf(buildColumn), buildColumn,
+                        next.root(), joinedSchema.indexInTable(probeColumn), probeColumn);
+            }
+        }
+
+        if (!statement.columns().isEmpty()) {
+            List<Integer> columnIndexes = statement.columns().stream().map(joinedSchema::rowIndexOf).toList();
+            root = new ProjectOperator(root, columnIndexes);
         }
 
         return new Plan(root, stats);

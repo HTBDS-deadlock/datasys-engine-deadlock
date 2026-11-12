@@ -35,6 +35,7 @@ public final class HashJoinOperator implements Operator {
     private int probeRowCount;
     private int rowsOut;
 
+    /** Join keys looked up by name in each side's schema (names must be unique per side). */
     public HashJoinOperator(Operator build, List<ColumnSpec> buildSchema, String buildColumn,
             Operator probe, List<ColumnSpec> probeSchema, String probeColumn) {
         this.build = build;
@@ -45,10 +46,28 @@ public final class HashJoinOperator implements Operator {
         this.probeColumn = probeColumn;
     }
 
+    /**
+     * Join keys given as positions in each side's rows. Needed when a side
+     * holds the same column name twice, as in a self-join. The column labels
+     * only appear in the log.
+     */
+    public HashJoinOperator(Operator build, int buildKey, String buildColumn,
+            Operator probe, int probeKey, String probeColumn) {
+        this(build, null, buildColumn, probe, null, probeColumn);
+        this.buildColumnIndex = buildKey;
+        this.probeColumnIndex = probeKey;
+    }
+
+    public HashJoinOperator(Operator build, Operator probe, int buildKey, int probeKey) {
+        this(build, buildKey, "#" + buildKey, probe, probeKey, "#" + probeKey);
+    }
+
     @Override
     public void open() {
-        buildColumnIndex = resolveColumnIndex(buildSchema, buildColumn);
-        probeColumnIndex = resolveColumnIndex(probeSchema, probeColumn);
+        if (buildSchema != null) {
+            buildColumnIndex = resolveColumnIndex(buildSchema, buildColumn);
+            probeColumnIndex = resolveColumnIndex(probeSchema, probeColumn);
+        }
 
         build.open();
         buildIndex = new HashMap<>();

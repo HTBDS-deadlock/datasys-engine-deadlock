@@ -28,8 +28,11 @@ public final class SqlPrinter {
     }
 
     private String printSelect(SelectStatement stmt) {
-        String tables = String.join(", ", stmt.tableNames());
-        String sql = "SELECT * FROM " + tables;
+        String columns = stmt.columns().isEmpty() ? "*" : String.join(", ", stmt.columns());
+        String tables = stmt.tables().stream()
+                .map(t -> t.alias().equals(t.name()) ? t.name() : t.name() + " " + t.alias())
+                .collect(Collectors.joining(", "));
+        String sql = "SELECT " + columns + " FROM " + tables;
 
         List<String> conditions = new ArrayList<>();
         for (Predicate filter : stmt.filters()) {

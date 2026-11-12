@@ -14,10 +14,15 @@ public final class ProjectOperator implements Operator {
     private int rowsOut;
 
     public ProjectOperator(Operator child, List<ColumnSpec> schema, List<String> columns) {
-        this.child = child;
-        this.columnIndexes = columns.stream()
+        this(child, columns.stream()
                 .map(name -> resolveColumnIndex(schema, name))
-                .toList();
+                .toList());
+    }
+
+    /** Keeps the columns at these positions of the child's rows, in this order. */
+    public ProjectOperator(Operator child, List<Integer> columnIndexes) {
+        this.child = child;
+        this.columnIndexes = List.copyOf(columnIndexes);
     }
 
     @Override

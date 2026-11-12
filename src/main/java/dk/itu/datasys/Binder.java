@@ -71,29 +71,29 @@ public final class Binder {
     }
 
     private void bindSelect(SelectStatement stmt, Map<String, StorageEngine.TableSnapshot> snapshots) {
-        if (stmt.tableNames().size() == 1 && stmt.joins().isEmpty()) {
-            List<ColumnSpec> schema = schema(stmt.tableNames().get(0), snapshots);
-            for (Predicate predicate : stmt.filters()) {
-                ColumnSpec column = findColumn(schema, predicate.columnName());
-                StorageEngine.validateConstantType(column.type(), predicate.constant());
-            }
-            return;
-        }
-        if (stmt.tableNames().size() == 1) {
+        if (stmt.tables().size() == 1 && !stmt.joins().isEmpty()) {
             throw new UnsupportedOperationException("A single-table SELECT cannot have a join predicate");
         }
 
+        // One JoinedSchema for any number of tables: it resolves bare and
+        // alias-qualified column names the same way for 1 or N tables.
         List<List<ColumnSpec>> perTableSchema = stmt.tableNames().stream()
                 .map(tableName -> schema(tableName, snapshots))
                 .toList();
-        JoinedSchema joinedSchema = new JoinedSchema(stmt.tableNames(), perTableSchema);
+        JoinedSchema joinedSchema = new JoinedSchema(stmt.aliases(), perTableSchema);
 
-        // Throws unless the join predicates fold left-to-right unambiguously.
-        joinedSchema.resolveFoldOrder(stmt.joins());
+        if (stmt.tables().size() > 1) {
+            // Throws unless the join predicates fold left-to-right unambiguously.
+            joinedSchema.resolveFoldOrder(stmt.joins());
+        }
 
         for (Predicate predicate : stmt.filters()) {
             ColumnSpec column = joinedSchema.columnSpec(predicate.columnName());
             StorageEngine.validateConstantType(column.type(), predicate.constant());
+        }
+
+        for (String column : stmt.columns()) {
+            joinedSchema.tableIndexOf(column); // throws if unknown or ambiguous
         }
     }
 

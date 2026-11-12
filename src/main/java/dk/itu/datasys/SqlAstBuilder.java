@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import org.antlr.v4.runtime.tree.TerminalNode;
+import org.antlr.v4.runtime.Token;
 
 import dk.itu.datasys.sql.sqlBaseVisitor;
 import dk.itu.datasys.sql.sqlParser;
@@ -28,7 +28,9 @@ public class SqlAstBuilder extends sqlBaseVisitor<Statement> {
 
     @Override
     public Statement visitSelect(sqlParser.SelectContext ctx) {
-        List<String> tableNames = ctx.IDENTIFIER().stream().map(TerminalNode::getText).toList();
+        List<TableRef> tables = ctx.tableRef().stream().map(this::buildTableRef).toList();
+        // '*' has no columnRefs, so it yields the empty list that means "all columns".
+        List<String> columns = ctx.selectList().columnRef().stream().map(this::columnRef).toList();
 
         List<Predicate> filters = new ArrayList<>();
         List<JoinPredicate> joins = new ArrayList<>();
@@ -41,12 +43,18 @@ public class SqlAstBuilder extends sqlBaseVisitor<Statement> {
                 }
             }
         }
-        return new SelectStatement(tableNames, filters, joins);
+        return new SelectStatement(tables, columns, filters, joins);
     }
 
     @Override
     public Statement visitDelete(sqlParser.DeleteContext ctx) {
         String tableName = ctx.IDENTIFIER().getText();
+        // DELETE keeps its restricted one-table form: no qualified column names.
+        if (ctx.filter() != null && ctx.filter().columnRef().qualifier != null) {
+            Token qualifier = ctx.filter().columnRef().qualifier;
+            throw new SqlParseException("DELETE does not support qualified column names: "
+                    + ctx.filter().columnRef().getText(), qualifier.getLine(), qualifier.getCharPositionInLine());
+        }
         Optional<Predicate> where = ctx.filter() != null
                 ? Optional.of(buildFilter(ctx.filter()))
                 : Optional.empty();
@@ -54,11 +62,22 @@ public class SqlAstBuilder extends sqlBaseVisitor<Statement> {
     }
 
     private JoinPredicate buildJoinPredicate(sqlParser.JoinContext ctx) {
-        return new JoinPredicate(ctx.left.getText(), ctx.right.getText());
+        return new JoinPredicate(columnRef(ctx.left), columnRef(ctx.right));
+    }
+
+    private TableRef buildTableRef(sqlParser.TableRefContext ctx) {
+        String name = ctx.table.getText();
+        return ctx.alias == null ? new TableRef(name) : new TableRef(name, ctx.alias.getText());
+    }
+
+    /** "column" or "qualifier.column", whitespace around the dot dropped. */
+    private String columnRef(sqlParser.ColumnRefContext ctx) {
+        String column = ctx.column.getText();
+        return ctx.qualifier == null ? column : ctx.qualifier.getText() + "." + column;
     }
 
     private Predicate buildFilter(sqlParser.FilterContext ctx) {
-        String columnName = ctx.IDENTIFIER().getText();
+        String columnName = columnRef(ctx.columnRef());
         Comparison comparison = switch (ctx.comparison.getText()) {
             case "=" -> Comparison.EQUALS;
             case "<" -> Comparison.LESS_THAN;
