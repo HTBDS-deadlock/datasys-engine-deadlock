@@ -2,10 +2,11 @@
 
 ## 1. Catalog storage
 One catalog file, `catalog.json`, at the root of the data directory (the `Path`
-passed to the `StorageEngine` constructor). A single file is enough because the
-engine has no concurrent writers. JSON is human-readable, easy to debug by hand,
-and the exercise allows a JSON library for the catalog. The catalog holds only
-metadata, not rows, so it is loaded fully into memory at startup.
+passed to the `StorageEngine` constructor). JSON is human-readable, easy to debug
+by hand, and the exercise allows a JSON library for the catalog. The catalog
+holds only metadata, not rows, so it is loaded fully into memory at startup.
+Concurrent writers in one engine instance serialize appends to each table's data
+file and validate/publish catalog versions under a commit lock.
 
 ## 2. Catalog contents
 Per table, keyed by table name:
@@ -28,7 +29,8 @@ and writer of these files and always reads the catalog first.
 ## 4. Restart
 A new `StorageEngine` on an existing data directory reads `catalog.json` and
 rebuilds in memory every table's columns, data file, partitions and min/max
-statistics. The catalog is saved after every `CREATE TABLE` and `COPY`.
+statistics. The catalog is saved atomically once when the engine closes;
+intermediate committed versions exist only in memory during that invocation.
 
 ## 5. Layout inside a partition
 PAX: each partition is split into groups of 1,024 rows, and within a group the
