@@ -51,6 +51,11 @@ public final class ProjectOperator implements Operator {
         LOGGER.debug("columns={} rowsOut={}", columnIndexes.size(), rowsOut);
     }
 
+    /** The child operator; package-private so tests can inspect a plan's shape. */
+    Operator child() {
+        return child;
+    }
+
     private static int resolveColumnIndex(List<ColumnSpec> schema, String name) {
         for (int i = 0; i < schema.size(); i++) {
             if (schema.get(i).name().equals(name)) {

@@ -134,6 +134,41 @@ public final class JoinedSchema {
         return foldSteps;
     }
 
+    /**
+     * The join predicates must connect every table of the FROM list, in any
+     * order, with exactly one predicate joining each table to the rest: a
+     * tree over the tables. No cross products (a table nothing connects to)
+     * and no cycles (the hash join has a single key). -j optimized may then
+     * join the tables in any connected order.
+     */
+    public void requireConnectedJoinTree(List<JoinPredicate> joins) {
+        Set<Integer> reached = new HashSet<>(List.of(0));
+        boolean grew = true;
+        while (grew) {
+            grew = false;
+            for (JoinPredicate predicate : joins) {
+                int left = tableIndexOf(predicate.leftColumn());
+                int right = tableIndexOf(predicate.rightColumn());
+                if (reached.contains(left) != reached.contains(right)) {
+                    reached.add(left);
+                    reached.add(right);
+                    grew = true;
+                }
+            }
+        }
+        for (int t = 0; t < tableNames.size(); t++) {
+            if (!reached.contains(t)) {
+                throw new IllegalArgumentException(
+                        "Table " + tableNames.get(t) + " has no join predicate connecting it to the other tables");
+            }
+        }
+        if (joins.size() != tableNames.size() - 1) {
+            throw new IllegalArgumentException("The " + joins.size() + " join predicates connect "
+                    + tableNames.size() + " tables in a cycle; only one predicate may connect each table to the "
+                    + "rest (" + (tableNames.size() - 1) + " in total)");
+        }
+    }
+
     private static boolean hasColumn(List<ColumnSpec> schema, String columnName) {
         for (ColumnSpec column : schema) {
             if (column.name().equals(columnName)) {

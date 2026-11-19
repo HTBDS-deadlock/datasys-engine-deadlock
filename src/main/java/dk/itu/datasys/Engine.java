@@ -19,8 +19,10 @@ public final class Engine {
     private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
 
     // the main method which is the entry point of the program; the SQL front
-    // door. No arguments: usage. One argument: that argument is the SQL text to
-    // run. "-f <path>" (two arguments): run the whole script at that path. Each
+    // door. No arguments: usage. "-c <sql>": run that SQL text. "-f <path>":
+    // run the whole script at that path. Either may be preceded by
+    // "-j optimized" (the default: join order from the statistics) or
+    // "-j syntax" (the FROM list is the join order, as in week 10). Each
     // SELECT's rows go to stdout as headerless CSV; nothing else touches stdout.
     public static void main(String[] args) {
         MDC.put("statementNumber", "0");
@@ -29,6 +31,11 @@ public final class Engine {
 
         // run("SELECT * FROM trips WHERE city = 'Odense';");
         try {
+            JoinMode mode = JoinMode.OPTIMIZED;
+            if (args.length >= 2 && args[0].equals("-j")) {
+                mode = JoinMode.parse(args[1]);
+                args = Arrays.copyOfRange(args, 2, args.length);
+            }
             String sqlText;
             if (args.length == 2 && args[0].equals("-c")) { // Single SQL input
                 // May omit its trailing ';' (the exercise's own quoting examples
@@ -46,7 +53,7 @@ public final class Engine {
                 return;
             }
 
-            run(sqlText);
+            run(sqlText, mode);
         } catch (RuntimeException e) {
             // keeps stdout clean: the failure's message goes to stderr, never
             // a raw stack trace mixed into the CSV output -- and still lands
@@ -58,13 +65,13 @@ public final class Engine {
         }
     }
 
-    private static void run(String sqlText) {
+    private static void run(String sqlText, JoinMode mode) {
         // try-with-resources: engine.close() (one catalog.json write for the whole
         // session, see docs/transactions-design.md) runs whether the script
         // finishes normally or a statement fails -- only a real JVM crash loses
         // what was committed before that.
         try (StorageEngine engine = new StorageEngine(Path.of("data"))) {
-            Executor executor = new Executor(engine);
+            Executor executor = new Executor(engine, mode);
             for (ExecutionResult result : executor.run(sqlText)) {
                 result.rows().ifPresent(Engine::printCsv);
             }
@@ -81,8 +88,9 @@ public final class Engine {
 
     private static void printCsv(List<Object[]> rows) {
         for (Object[] row : rows) {
+            // null (an aggregate over no rows) prints as an empty field, as DuckDB's CSV does
             System.out.println(Arrays.stream(row)
-                    .map(String::valueOf)
+                    .map(value -> value == null ? "" : String.valueOf(value))
                     .collect(Collectors.joining(",")));
         }
     }
@@ -92,6 +100,7 @@ public final class Engine {
         System.out.println("Usage:");
         System.out.println("  ./engine -c \"<sql statement>\"");
         System.out.println("  ./engine -f <path-to-script.sql>");
+        System.out.println("  ./engine -j syntax|optimized -c ... or -f ...  (default: optimized)");
 
         /*
          * 

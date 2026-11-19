@@ -25,9 +25,14 @@ public final class Executor {
     private final Planner planner;
 
     public Executor(StorageEngine engine) {
+        this(engine, JoinMode.OPTIMIZED);
+    }
+
+    /** mode: how SELECTs order their joins (-j optimized, the default, or -j syntax). */
+    public Executor(StorageEngine engine, JoinMode mode) {
         this.engine = engine;
         this.binder = new Binder(engine);
-        this.planner = new Planner(engine);
+        this.planner = new Planner(engine, mode);
     }
 
     public List<ExecutionResult> run(String sqlText) {
@@ -95,9 +100,13 @@ public final class Executor {
                 List<Object[]> result = Operator.drain(plan.root());
                 int partitionsRead = plan.stats().stream().mapToInt(ScanStats::partitionsRead).sum();
                 int partitionsPruned = plan.stats().stream().mapToInt(ScanStats::partitionsPruned).sum();
+                // joinOrder and plan (build input first in every J) identify the
+                // plan; the HashJoinOperator lines of the same statementNumber
+                // carry each join's estRows and rowsOut
                 LOGGER.debug(
-                        "statement=SELECT tables={} rowsOut={} partitionsRead={} partitionsPruned={} durationMs={}",
-                        s.tableNames(), result.size(), partitionsRead, partitionsPruned,
+                        "statement=SELECT tables={} joinOrder={} mode={} plan={} rowsOut={} partitionsRead={} partitionsPruned={} durationMs={}",
+                        String.join(";", s.aliases()), String.join(";", plan.joinOrder()), plan.mode().label(),
+                        plan.shape(), result.size(), partitionsRead, partitionsPruned,
                         System.currentTimeMillis() - start);
                 yield Optional.of(result);
             }

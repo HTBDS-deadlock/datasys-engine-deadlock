@@ -315,7 +315,8 @@ class Week10Tests {
                         + "WHERE o_custname = c_name AND o_prodname = p_name AND c_city = ct_city "
                         + "AND c_city = 'Copenhagen';").get(0);
 
-        Plan plan = new Planner(engine).plan(statement);
+        // -j syntax reproduces week 10's plan exactly.
+        Plan plan = new Planner(engine, JoinMode.SYNTAX).plan(statement);
 
         // ((orders JOIN customers) JOIN products) JOIN cities: each join's
         // build side is the join so far, its probe side the next FROM table.

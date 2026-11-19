@@ -25,6 +25,11 @@ public final class HashJoinOperator implements Operator {
     private final Operator probe;
     private final List<ColumnSpec> probeSchema;
     private final String probeColumn;
+    // for the log: the tables this join's output row holds, build side first,
+    // and the planner's estimate of rowsOut (-1 when the operator was built
+    // without one, e.g. directly in a test)
+    private String tables = "";
+    private long estRows = -1;
 
     private int buildColumnIndex;
     private int probeColumnIndex;
@@ -56,6 +61,17 @@ public final class HashJoinOperator implements Operator {
         this(build, null, buildColumn, probe, null, probeColumn);
         this.buildColumnIndex = buildKey;
         this.probeColumnIndex = probeKey;
+    }
+
+    /**
+     * As above, plus what the planner knows: the tables this join holds and its
+     * estimated output size, logged next to the actual rowsOut on close().
+     */
+    public HashJoinOperator(Operator build, int buildKey, String buildColumn,
+            Operator probe, int probeKey, String probeColumn, String tables, long estRows) {
+        this(build, buildKey, buildColumn, probe, probeKey, probeColumn);
+        this.tables = tables;
+        this.estRows = estRows;
     }
 
     public HashJoinOperator(Operator build, Operator probe, int buildKey, int probeKey) {
@@ -107,8 +123,10 @@ public final class HashJoinOperator implements Operator {
     @Override
     public void close() {
         probe.close();
-        LOGGER.debug("buildColumn={} probeColumn={} rowsBuild={} rowsProbe={} rowsOut={}",
-                buildColumn, probeColumn, buildRowCount, probeRowCount, rowsOut);
+        // one line per executed join: the estimate next to the actual output
+        LOGGER.debug("tables={} buildColumn={} probeColumn={} estRows={} rowsBuild={} keys={} rowsProbe={} rowsOut={}",
+                tables, buildColumn, probeColumn, estRows, buildRowCount,
+                buildIndex == null ? 0 : buildIndex.size(), probeRowCount, rowsOut);
     }
 
     /** The build child; package-private so tests can inspect a plan's shape. */
@@ -119,6 +137,11 @@ public final class HashJoinOperator implements Operator {
     /** The probe child; package-private so tests can inspect a plan's shape. */
     Operator probe() {
         return probe;
+    }
+
+    /** The planner's estimate of this join's output; package-private for tests. */
+    long estRows() {
+        return estRows;
     }
 
     private static Object[] combine(Object[] buildRow, Object[] probeRow) {

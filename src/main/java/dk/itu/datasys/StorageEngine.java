@@ -25,6 +25,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
@@ -50,7 +52,11 @@ public final class StorageEngine implements AutoCloseable {
     private static final int MAX_COMMIT_ATTEMPTS = 3;
 
     // objectmapper used to read and write the catalog json file,
-    private static final ObjectMapper MAPPER = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    // Tolerant reader: unknown catalog fields are ignored rather than fatal, so an
+    // engine can read a catalog written by a newer release (see
+    // docs/optimizer-design.md, section 3).
+    private static final ObjectMapper MAPPER = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     // data directory where the catalog and data files are stored,
     // the path to the catalog file,
@@ -299,6 +305,7 @@ public final class StorageEngine implements AutoCloseable {
         // computing the min and max values for each column in the partition and storing
         // them in a map
         Map<String, Object[]> stats = new LinkedHashMap<>();
+        Map<String, Long> ndv = new LinkedHashMap<>();
         for (int c = 0; c < columns.size(); c++) {
             List<Object> values = new ArrayList<>(rowCount);
             for (Object[] row : rows) {
@@ -306,10 +313,14 @@ public final class StorageEngine implements AutoCloseable {
             }
             Object[] columnMinMax = minMax(values);
             stats.put(columns.get(c).name(), columnMinMax);
+            // number of distinct values, exact within the partition
+            long columnNdv = ndv(values);
+            ndv.put(columns.get(c).name(), columnNdv);
 
-            // logging the min and max values for each column in the partition
-            LOGGER.debug("table={} partition={} column={} min={} max={}",
-                    tableName, partitionIndex, columns.get(c).name(), columnMinMax[0], columnMinMax[1]);
+            // logging the min, max and ndv for each column in the partition
+            LOGGER.debug("table={} partition={} column={} min={} max={} rows={} ndv={}",
+                    tableName, partitionIndex, columns.get(c).name(), columnMinMax[0], columnMinMax[1],
+                    rowCount, columnNdv);
         }
         // setting the offset to 0 and writing the rows to the binary data file in PAX
         // layout,
@@ -341,6 +352,7 @@ public final class StorageEngine implements AutoCloseable {
         info.byteOffset = byteOffset;
         info.rowCount = rowCount;
         info.stats = stats;
+        info.ndv = ndv;
         return info;
     }
 
@@ -856,6 +868,31 @@ public final class StorageEngine implements AutoCloseable {
         return stats;
     }
 
+    /**
+     * The row count of each of the table's partitions, indexed by partition
+     * number. Used by the planner to estimate a table's size after pruning.
+     */
+    public List<Integer> partitionRowCounts(TableSnapshot snapshot) {
+        List<Integer> rowCounts = new ArrayList<>(snapshot.schema.partitions.size());
+        for (PartitionInfo partition : snapshot.schema.partitions) {
+            rowCounts.add(partition.rowCount);
+        }
+        return rowCounts;
+    }
+
+    /**
+     * The number of distinct values of columnName in each of the table's
+     * partitions, indexed by partition number. An entry is null when the
+     * partition was written before NDV was collected (unknown, not 0).
+     */
+    public List<Long> columnNdvs(TableSnapshot snapshot, String columnName) {
+        List<Long> ndvs = new ArrayList<>(snapshot.schema.partitions.size());
+        for (PartitionInfo partition : snapshot.schema.partitions) {
+            ndvs.add(partition.ndv == null ? null : partition.ndv.get(columnName));
+        }
+        return ndvs;
+    }
+
     private void publishSchema(String tableName, TableSchema schema) {
         versionHistory.computeIfAbsent(tableName, ignored -> new ConcurrentSkipListMap<>())
                 .put(schema.version, schema);
@@ -967,6 +1004,15 @@ public final class StorageEngine implements AutoCloseable {
                 yield new String(stringBytes, StandardCharsets.UTF_8);
             }
         };
+    }
+
+    /**
+     * The exact number of distinct values in a partition's column, computed
+     * with a HashSet. Cheap at partition size (at most 10,240 rows); at a
+     * billion rows this would become a HyperLogLog sketch.
+     */
+    static long ndv(List<Object> values) {
+        return new HashSet<>(values).size();
     }
 
     /**
@@ -1247,11 +1293,16 @@ public final class StorageEngine implements AutoCloseable {
             info.byteOffset = partitionEntry.byteOffset;
             info.rowCount = partitionEntry.rowCount;
             info.stats = new LinkedHashMap<>();
+            info.ndv = new LinkedHashMap<>();
             for (Map.Entry<String, StatsEntry> statsEntry : partitionEntry.stats.entrySet()) {
                 ColumnType type = columnType(schema.columns, statsEntry.getKey());
                 Object min = parseTyped(type, statsEntry.getValue().min);
                 Object max = parseTyped(type, statsEntry.getValue().max);
                 info.stats.put(statsEntry.getKey(), new Object[]{min, max});
+                // absent in catalogs written before v0.11: null means unknown
+                if (statsEntry.getValue().ndv != null) {
+                    info.ndv.put(statsEntry.getKey(), statsEntry.getValue().ndv);
+                }
             }
             schema.partitions.add(info);
         }
@@ -1294,6 +1345,7 @@ public final class StorageEngine implements AutoCloseable {
                 StatsEntry stats = new StatsEntry();
                 stats.min = String.valueOf(statsEntry.getValue()[0]);
                 stats.max = String.valueOf(statsEntry.getValue()[1]);
+                stats.ndv = info.ndv == null ? null : info.ndv.get(statsEntry.getKey());
                 partitionEntry.stats.put(statsEntry.getKey(), stats);
             }
             entry.partitions.add(partitionEntry);
@@ -1394,6 +1446,8 @@ public final class StorageEngine implements AutoCloseable {
         long byteOffset;
         int rowCount;
         Map<String, Object[]> stats;
+        // per-column number of distinct values; a missing entry means unknown
+        Map<String, Long> ndv;
     }
 
     // ------------------------------------------------------------------
@@ -1464,5 +1518,8 @@ public final class StorageEngine implements AutoCloseable {
 
         public String min;
         public String max;
+        // omitted from the JSON when unknown, so old partitions stay as they were
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        public Long ndv;
     }
 }

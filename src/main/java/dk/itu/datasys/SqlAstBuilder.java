@@ -29,8 +29,20 @@ public class SqlAstBuilder extends sqlBaseVisitor<Statement> {
     @Override
     public Statement visitSelect(sqlParser.SelectContext ctx) {
         List<TableRef> tables = ctx.tableRef().stream().map(this::buildTableRef).toList();
-        // '*' has no columnRefs, so it yields the empty list that means "all columns".
-        List<String> columns = ctx.selectList().columnRef().stream().map(this::columnRef).toList();
+        // '*' has no selectItems, so it yields the empty lists that mean "all columns".
+        List<String> columns = new ArrayList<>();
+        List<Aggregate> aggregates = new ArrayList<>();
+        List<sqlParser.SelectItemContext> items = ctx.selectList().selectItem();
+        for (int position = 0; position < items.size(); position++) {
+            sqlParser.SelectItemContext item = items.get(position);
+            if (item.aggregate() != null) {
+                aggregates.add(buildAggregate(item.aggregate(), position));
+            } else {
+                columns.add(columnRef(item.columnRef()));
+            }
+        }
+        List<String> groupBy = ctx.groupBy() == null ? List.of()
+                : ctx.groupBy().columnRef().stream().map(this::columnRef).toList();
 
         List<Predicate> filters = new ArrayList<>();
         List<JoinPredicate> joins = new ArrayList<>();
@@ -43,7 +55,7 @@ public class SqlAstBuilder extends sqlBaseVisitor<Statement> {
                 }
             }
         }
-        return new SelectStatement(tables, columns, filters, joins);
+        return new SelectStatement(tables, List.copyOf(columns), filters, joins, List.copyOf(aggregates), groupBy);
     }
 
     @Override
@@ -59,6 +71,22 @@ public class SqlAstBuilder extends sqlBaseVisitor<Statement> {
                 ? Optional.of(buildFilter(ctx.filter()))
                 : Optional.empty();
         return new DeleteStatement(tableName, where);
+    }
+
+    /** min(col), max(col), sum(col), count(col) or count(*). */
+    private Aggregate buildAggregate(sqlParser.AggregateContext ctx, int position) {
+        Token name = ctx.function;
+        AggregateFunction function;
+        try {
+            function = AggregateFunction.parse(name.getText());
+        } catch (IllegalArgumentException e) {
+            throw new SqlParseException(e.getMessage(), name.getLine(), name.getCharPositionInLine());
+        }
+        if (ctx.star != null && function != AggregateFunction.COUNT) {
+            throw new SqlParseException(function.sqlName() + "(*) is not supported; only count(*) takes *",
+                    name.getLine(), name.getCharPositionInLine());
+        }
+        return new Aggregate(function, ctx.star != null ? null : columnRef(ctx.columnRef()), position);
     }
 
     private JoinPredicate buildJoinPredicate(sqlParser.JoinContext ctx) {
