@@ -18,9 +18,22 @@ mvn package -DskipTests
 ./engine -c "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
 COPY trips FROM 'src/test/resources/trips.csv';"
 
+
 ./engine -c "SELECT city, price FROM trips WHERE distance < 100"
 ./engine -f q.sql             # run a script file
 ```
+
+```bash GroupBY 
+mvn package
+
+./engine -f "src\test\resources\groupby\load.sql"
+
+./engine -j syntax  -c "SELECT c_city, min(p_price), count(*)
+FROM orders, customers, products
+WHERE o_custname = c_name AND o_prodname = p_name
+GROUP BY c_city;"
+```
+
 
 `SELECT` rows are printed to stdout as CSV; logs go to stderr and `logs/engine.log`.
 Tables are stored in `./data` and persist between runs; delete it to start over.

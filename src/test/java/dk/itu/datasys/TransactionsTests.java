@@ -394,14 +394,18 @@ class TransactionsTests {
     // minus the ones DELETE removed.
     // ------------------------------------------------------------------
 
-    // Engine.main hardcodes its data directory to "data" under the working
-    // directory (the module root when run via Maven), matching Week4Tests'
-    // own handling of the real front door.
-    private static final Path REAL_DATA_DIRECTORY = Path.of("data");
+    // Engine.main reads its data directory from the engine.dataDir system
+    // property (default "data"); point it into target/ so these tests reset a
+    // directory of their own and never delete the real data.
+    private static final Path TEST_DATA_DIRECTORY = Path.of("target", "test-data");
+
+    static {
+        System.setProperty(Engine.DATA_DIR_PROPERTY, TEST_DATA_DIRECTORY.toString());
+    }
 
     @Test
     void frontDoorScriptWithDeleteReturnsRemainingRows(@TempDir Path scriptDirectory) throws IOException {
-        deleteRecursively(REAL_DATA_DIRECTORY);
+        deleteRecursively(TEST_DATA_DIRECTORY);
         try {
             Path script = scriptDirectory.resolve("q.sql");
             Files.writeString(script, """
@@ -430,7 +434,7 @@ class TransactionsTests {
                     """;
             assertEquals(expectedCsv, stdout);
         } finally {
-            deleteRecursively(REAL_DATA_DIRECTORY);
+            deleteRecursively(TEST_DATA_DIRECTORY);
         }
     }
 
