@@ -18,6 +18,12 @@ public final class Engine {
     // our logger, which we can use to log messages to the console and to a file
     private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
 
+    /**
+     * System property naming the data directory; "data" when unset. Tests point
+     * it at target/test-data so a test run never touches the real data.
+     */
+    static final String DATA_DIR_PROPERTY = "engine.dataDir";
+
     // the main method which is the entry point of the program; the SQL front
     // door. No arguments: usage. "-c <sql>": run that SQL text. "-f <path>":
     // run the whole script at that path. Either may be preceded by
@@ -70,7 +76,7 @@ public final class Engine {
         // session, see docs/transactions-design.md) runs whether the script
         // finishes normally or a statement fails -- only a real JVM crash loses
         // what was committed before that.
-        try (StorageEngine engine = new StorageEngine(Path.of("data"))) {
+        try (StorageEngine engine = new StorageEngine(Path.of(System.getProperty(DATA_DIR_PROPERTY, "data")))) {
             Executor executor = new Executor(engine, mode);
             for (ExecutionResult result : executor.run(sqlText)) {
                 result.rows().ifPresent(Engine::printCsv);

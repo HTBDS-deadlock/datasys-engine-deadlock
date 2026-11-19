@@ -388,15 +388,20 @@ class Week10Tests {
     //    equals the sorted DuckDB output for all four queries.
     // ------------------------------------------------------------------
 
-    // Engine.main hardcodes its data directory to "data" under the working
-    // directory, so these tests reset that real directory, as Week4Tests does.
-    private static final Path REAL_DATA_DIRECTORY = Path.of("data");
+    // Engine.main reads its data directory from the engine.dataDir system
+    // property (default "data"); point it into target/ so these tests reset a
+    // directory of their own and never delete the real data.
+    private static final Path TEST_DATA_DIRECTORY = Path.of("target", "test-data");
+
+    static {
+        System.setProperty(Engine.DATA_DIR_PROPERTY, TEST_DATA_DIRECTORY.toString());
+    }
 
     @BeforeEach
     @AfterEach
-    void resetRealDataDirectory() throws IOException {
-        if (Files.exists(REAL_DATA_DIRECTORY)) {
-            try (var paths = Files.walk(REAL_DATA_DIRECTORY)) {
+    void resetTestDataDirectory() throws IOException {
+        if (Files.exists(TEST_DATA_DIRECTORY)) {
+            try (var paths = Files.walk(TEST_DATA_DIRECTORY)) {
                 paths.sorted(Comparator.reverseOrder()).forEach(path -> {
                     try {
                         Files.delete(path);
