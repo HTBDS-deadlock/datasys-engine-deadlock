@@ -12,8 +12,12 @@ columnType   : STRING | LONG | DOUBLE ;
 
 copy         : COPY IDENTIFIER FROM STRING_LITERAL ;
 
-select       : SELECT selectList FROM tableRef (',' tableRef)* (WHERE condition)? ;
-selectList   : '*' | columnRef (',' columnRef)* ;
+select       : SELECT selectList FROM tableRef (',' tableRef)* (WHERE condition)? groupBy? ;
+selectList   : '*' | selectItem (',' selectItem)* ;
+selectItem   : aggregate | columnRef ;
+// min, max, sum, count; the name is an IDENTIFIER, so it stays usable as a column name
+aggregate    : function=IDENTIFIER '(' (star='*' | columnRef) ')' ;
+groupBy      : GROUP BY columnRef (',' columnRef)* ;
 tableRef     : table=IDENTIFIER (AS? alias=IDENTIFIER)? ;
 columnRef    : (qualifier=IDENTIFIER '.')? column=IDENTIFIER ;   // c_city or c1.c_city
 condition    : predicate (AND predicate)* ;
@@ -29,6 +33,7 @@ literal      : STRING_LITERAL | LONG_LITERAL | DOUBLE_LITERAL ;
 // Lexer. Keyword rules MUST precede IDENTIFIER, or IDENTIFIER swallows them.
 CREATE : 'CREATE' ;   TABLE : 'TABLE' ;   COPY : 'COPY' ;   FROM : 'FROM' ;
 SELECT : 'SELECT' ;   WHERE : 'WHERE' ;   DELETE : 'DELETE' ;   AND : 'AND' ;   AS : 'AS' ;
+GROUP : 'GROUP' ;   BY : 'BY' ;
 STRING : 'STRING' ;   LONG : 'LONG' ;   DOUBLE : 'DOUBLE' ;
 
 IDENTIFIER      : [A-Z_] [A-Z_0-9]* ;        // caseInsensitive covers a–z

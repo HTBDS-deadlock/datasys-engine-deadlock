@@ -88,8 +88,9 @@ public final class Engine {
 
     private static void printCsv(List<Object[]> rows) {
         for (Object[] row : rows) {
+            // null (an aggregate over no rows) prints as an empty field, as DuckDB's CSV does
             System.out.println(Arrays.stream(row)
-                    .map(String::valueOf)
+                    .map(value -> value == null ? "" : String.valueOf(value))
                     .collect(Collectors.joining(",")));
         }
     }

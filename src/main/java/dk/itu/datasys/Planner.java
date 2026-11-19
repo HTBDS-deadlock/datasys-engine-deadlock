@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -131,28 +132,91 @@ public final class Planner {
             currentEst = step.estRows();
         }
 
-        // Output columns: the SELECT list, or every column in FROM-list order
-        // for SELECT *, located in the row the plan actually produces.
-        List<String> outputColumns = statement.columns();
-        List<Integer> columnIndexes = new ArrayList<>();
-        if (outputColumns.isEmpty()) {
-            for (int t = 0; t < tableCount; t++) {
-                int offset = offsetOf(t, layout, perTableSchema);
-                for (int c = 0; c < perTableSchema.get(t).size(); c++) {
-                    columnIndexes.add(offset + c);
-                }
+        if (statement.isAggregation()) {
+            Aggregation aggregation = aggregate(statement, root, layout, joinedSchema, perTableSchema, estimates,
+                    currentEst);
+            root = aggregation.root();
+            shape = "Agg(" + shape + ")";
+            if (!isIdentity(aggregation.outputIndexes())) {
+                root = new ProjectOperator(root, aggregation.outputIndexes());
             }
         } else {
-            for (String column : outputColumns) {
-                columnIndexes.add(rowIndexOf(column, layout, joinedSchema, perTableSchema));
+            // Output columns: the SELECT list, or every column in FROM-list order
+            // for SELECT *, located in the row the plan actually produces.
+            List<Integer> columnIndexes = new ArrayList<>();
+            if (statement.isSelectStar()) {
+                for (int t = 0; t < tableCount; t++) {
+                    int offset = offsetOf(t, layout, perTableSchema);
+                    for (int c = 0; c < perTableSchema.get(t).size(); c++) {
+                        columnIndexes.add(offset + c);
+                    }
+                }
+            } else {
+                for (String column : statement.columns()) {
+                    columnIndexes.add(rowIndexOf(column, layout, joinedSchema, perTableSchema));
+                }
             }
-        }
-        if (!outputColumns.isEmpty() || !isIdentity(columnIndexes)) {
-            root = new ProjectOperator(root, columnIndexes);
+            if (!statement.isSelectStar() || !isIdentity(columnIndexes)) {
+                root = new ProjectOperator(root, columnIndexes);
+            }
         }
 
         List<String> joinOrder = order.tables().stream().map(statement.aliases()::get).toList();
         return new Plan(root, stats, joinOrder, mode, shape);
+    }
+
+    /**
+     * The HashAggregateOperator over the joined rows, and where each SELECT
+     * item sits in its output (the grouping columns, then the aggregates).
+     * Its estimate is the number of groups: the product of the grouping
+     * columns' NDVs, never more than the rows going in; 1 without GROUP BY.
+     */
+    private Aggregation aggregate(SelectStatement statement, Operator child, List<Integer> layout,
+            JoinedSchema joinedSchema, List<List<ColumnSpec>> perTableSchema,
+            List<JoinOrderer.TableEstimate> estimates, long rowsIn) {
+        List<Integer> groupKeys = new ArrayList<>();
+        double groups = 1;
+        for (String column : statement.groupBy()) {
+            groupKeys.add(rowIndexOf(column, layout, joinedSchema, perTableSchema));
+            long ndv = estimates.get(joinedSchema.tableIndexOf(column)).ndvOf(JoinedSchema.bareName(column));
+            groups *= ndv == Estimator.UNKNOWN_NDV ? rowsIn : ndv;
+        }
+        long estRows = statement.groupBy().isEmpty() ? 1 : Math.min(rowsIn, Estimator.rounded(groups));
+
+        List<Integer> valueIndexes = new ArrayList<>();
+        List<Supplier<Accumulator>> accumulators = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        for (Aggregate aggregate : statement.aggregates()) {
+            ColumnType type = aggregate.isCountStar() ? ColumnType.LONG
+                    : joinedSchema.columnSpec(aggregate.column()).type();
+            valueIndexes.add(aggregate.isCountStar() ? -1
+                    : rowIndexOf(aggregate.column(), layout, joinedSchema, perTableSchema));
+            accumulators.add(() -> Accumulator.of(aggregate.function(), type));
+            labels.add(aggregate.label());
+        }
+        String label = "groupBy=" + (statement.groupBy().isEmpty() ? "none" : String.join(";", statement.groupBy()))
+                + " aggregates=" + String.join(";", labels);
+        Operator root = new HashAggregateOperator(child, groupKeys, valueIndexes, accumulators, label, estRows);
+
+        List<Integer> outputIndexes = new ArrayList<>();
+        int aggregateIndex = 0;
+        for (Object item : statement.selectItems()) {
+            if (item instanceof Aggregate) {
+                outputIndexes.add(statement.groupBy().size() + aggregateIndex++);
+            } else {
+                String column = (String) item;
+                for (int g = 0; g < statement.groupBy().size(); g++) {
+                    if (Binder.sameColumn(column, statement.groupBy().get(g), joinedSchema)) {
+                        outputIndexes.add(g);
+                        break;
+                    }
+                }
+            }
+        }
+        return new Aggregation(root, outputIndexes);
+    }
+
+    private record Aggregation(Operator root, List<Integer> outputIndexes) {
     }
 
     /** The join order for the mode; single-table SELECTs have none to choose. */

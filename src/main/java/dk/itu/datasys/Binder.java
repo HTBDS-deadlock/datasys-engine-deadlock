@@ -87,8 +87,10 @@ public final class Binder {
         }
 
         if (stmt.tables().size() > 1) {
-            // Throws unless the join predicates fold left-to-right unambiguously.
-            joinedSchema.resolveFoldOrder(stmt.joins());
+            // Throws unless the join predicates connect every table, one
+            // predicate per table. Whether the FROM-list order itself can be
+            // folded is only required under -j syntax, so the planner checks that.
+            joinedSchema.requireConnectedJoinTree(stmt.joins());
         }
 
         for (Predicate predicate : stmt.filters()) {
@@ -99,6 +101,49 @@ public final class Binder {
         for (String column : stmt.columns()) {
             joinedSchema.tableIndexOf(column); // throws if unknown or ambiguous
         }
+
+        bindAggregation(stmt, joinedSchema);
+    }
+
+    /**
+     * GROUP BY columns and aggregate arguments must exist; sum needs a number;
+     * with GROUP BY or an aggregate, every plain SELECT column must be a
+     * grouping column (as in DuckDB), and SELECT * is not allowed.
+     */
+    private void bindAggregation(SelectStatement stmt, JoinedSchema joinedSchema) {
+        for (String column : stmt.groupBy()) {
+            joinedSchema.tableIndexOf(column);
+        }
+        for (Aggregate aggregate : stmt.aggregates()) {
+            if (aggregate.isCountStar()) {
+                continue;
+            }
+            ColumnType type = joinedSchema.columnSpec(aggregate.column()).type();
+            if (aggregate.function() == AggregateFunction.SUM && type == ColumnType.STRING) {
+                throw new IllegalArgumentException(aggregate.label() + " needs a LONG or DOUBLE column; "
+                        + aggregate.column() + " is STRING");
+            }
+        }
+        if (!stmt.isAggregation()) {
+            return;
+        }
+        if (stmt.isSelectStar()) {
+            throw new IllegalArgumentException("SELECT * cannot be combined with GROUP BY; list the columns");
+        }
+        for (String column : stmt.columns()) {
+            boolean grouped = stmt.groupBy().stream()
+                    .anyMatch(groupColumn -> sameColumn(column, groupColumn, joinedSchema));
+            if (!grouped) {
+                throw new IllegalArgumentException("Column " + column
+                        + " must appear in the GROUP BY list or be used in an aggregate function");
+            }
+        }
+    }
+
+    /** Whether two references (bare or qualified) name the same column of the same FROM table. */
+    static boolean sameColumn(String a, String b, JoinedSchema joinedSchema) {
+        return joinedSchema.tableIndexOf(a) == joinedSchema.tableIndexOf(b)
+                && joinedSchema.indexInTable(a) == joinedSchema.indexInTable(b);
     }
 
     /**

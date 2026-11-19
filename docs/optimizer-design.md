@@ -192,9 +192,14 @@ testable.
 
 - Only tables connected to the plan by a join predicate are candidates, so a
   cross product is never picked while a connected choice exists.
-- The engine has no cross-product operator. A query whose join graph is
-  disconnected is rejected with an error in both modes, as `resolveFoldOrder`
-  already does in v0.10.
+- The engine has no cross-product operator. The binder therefore requires the
+  join predicates to form a tree over the tables: every table connected, one
+  predicate per table (the hash join has a single key). A disconnected or
+  cyclic join graph is rejected in both modes.
+- Only `-j syntax` also requires the `FROM` list itself to fold left-deep
+  (each table connected to the ones before it). Under `-j optimized`,
+  `FROM orders, cities, customers` works even though `cities` connects only
+  to `customers`: the order in which the query is written costs nothing.
 
 ## 6. Build side
 
@@ -231,7 +236,72 @@ HashJoinOperator - tables=customers;cities estRows=1 rowsBuild=1 rowsProbe=4 row
 `estRows` divided by `rowsOut` is the estimate error that week 12's report
 analyses.
 
-## 9. Assumptions to revisit in the report
+## 9. GROUP BY (optional extension)
+
+```sql
+SELECT c_city, max(p_price), count(*)
+FROM orders, customers, products
+WHERE o_custname = c_name AND o_prodname = p_name
+GROUP BY c_city;
+```
+
+**Syntax.** DuckDB syntax, with `min`, `max`, `sum`, `count(col)` and
+`count(*)`. A query may have:
+
+- one or more `GROUP BY` columns;
+- several aggregates, mixed with plain columns in any order in the `SELECT`
+  list;
+- aggregates without `GROUP BY`, which return exactly one row.
+
+Function names are case-insensitive and are not reserved words, so a column
+may still be called `count`. Only `GROUP` and `BY` are new keywords.
+
+**Rules (the binder, as in DuckDB).**
+
+- A plain column in the `SELECT` list must also be a `GROUP BY` column.
+- `SELECT *` cannot be combined with `GROUP BY`.
+- `sum` needs a `LONG` or `DOUBLE` column.
+- `*` is only allowed in `count(*)`.
+
+**Result types.** `count` returns `LONG`. `sum` returns the column's type.
+`min` and `max` work on every type, because `LONG`, `DOUBLE` and `STRING` are
+all `Comparable` (lecture 11, slide 45).
+
+**Empty input.** Without `GROUP BY`, an empty input still gives one row:
+`count` is 0 and `min`, `max` and `sum` have no value. The engine has no NULL,
+so a missing value is printed as an empty CSV field. That is what DuckDB
+writes for NULL when it exports CSV (`COPY ... TO`). With `GROUP BY`, an
+empty input gives no rows.
+
+**Execution.** Hash aggregation (lecture 11, slides 43–45):
+
+- `HashAggregateOperator` sits on top of the joins (slide 44). It keeps one
+  accumulator per aggregate per group, in a `LinkedHashMap` keyed by the
+  grouping columns' values.
+- It is blocking: `open()` drains the child; `next()` then emits one row per
+  group, the grouping values followed by each accumulator's `finish()`.
+- The accumulator contract is init (the constructor), `update` once per row,
+  and `finish` once per group.
+- A final projection puts the output in `SELECT`-list order.
+
+**Estimate.** The number of groups is estimated as the product of the grouping
+columns' NDVs, capped at the estimated input rows. If an NDV is unknown, the
+input rows are used. Without `GROUP BY` the estimate is 1. Each executed
+aggregation logs its estimate next to the actual group count:
+
+```
+HashAggregateOperator - groupBy=c_city aggregates=max(p_price);count(*) estRows=3 rowsIn=7 rowsOut=3
+```
+
+The product of NDVs assumes the grouping columns are independent, and
+correlated columns make it an overestimate. A city implies its country, so
+`GROUP BY ct_country, c_city` has as many groups as `GROUP BY c_city` alone.
+
+**Oracle.** `src/test/resources/groupby` holds lecture 11's tables, eight
+queries, and DuckDB's output for each query. The tests run every query under
+both join modes and compare the sorted rows.
+
+## 10. Assumptions to revisit in the report
 
 The estimates depend on these assumptions. When week 12 finds the engine's worst
 estimate, they are the first places to look.

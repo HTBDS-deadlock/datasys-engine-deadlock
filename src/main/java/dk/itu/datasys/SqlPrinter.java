@@ -28,7 +28,10 @@ public final class SqlPrinter {
     }
 
     private String printSelect(SelectStatement stmt) {
-        String columns = stmt.columns().isEmpty() ? "*" : String.join(", ", stmt.columns());
+        String columns = stmt.isSelectStar() ? "*"
+                : stmt.selectItems().stream()
+                        .map(item -> item instanceof Aggregate aggregate ? aggregate.label() : (String) item)
+                        .collect(Collectors.joining(", "));
         String tables = stmt.tables().stream()
                 .map(t -> t.alias().equals(t.name()) ? t.name() : t.name() + " " + t.alias())
                 .collect(Collectors.joining(", "));
@@ -43,6 +46,9 @@ public final class SqlPrinter {
         }
         if (!conditions.isEmpty()) {
             sql += " WHERE " + String.join(" AND ", conditions);
+        }
+        if (!stmt.groupBy().isEmpty()) {
+            sql += " GROUP BY " + String.join(", ", stmt.groupBy());
         }
         return sql + ";";
     }
