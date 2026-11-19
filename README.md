@@ -23,8 +23,6 @@ COPY trips FROM 'src/test/resources/trips.csv';"
 ./engine -f q.sql             # run a script file
 ```
 
-
-
 ```bash GroupBY 
 mvn package
 
