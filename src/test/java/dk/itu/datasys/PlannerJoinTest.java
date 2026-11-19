@@ -63,7 +63,7 @@ class PlannerJoinTest {
     @Test
     void joinsTwoTablesLeftDeepAndDropsUnmatchedRows(@TempDir Path dataDirectory) throws IOException {
         StorageEngine engine = twoTableEngine(dataDirectory);
-        Planner planner = new Planner(engine);
+        Planner planner = new Planner(engine, JoinMode.SYNTAX);
         SelectStatement statement = new SelectStatement(List.of("trips", "drivers"), List.of(),
                 List.of(new JoinPredicate("driver_id", "id")));
 
@@ -81,7 +81,7 @@ class PlannerJoinTest {
     @Test
     void perTablePruningStaysVisibleInPlanStats(@TempDir Path dataDirectory) throws IOException {
         StorageEngine engine = twoTableEngine(dataDirectory);
-        Planner planner = new Planner(engine);
+        Planner planner = new Planner(engine, JoinMode.SYNTAX);
         SelectStatement statement = new SelectStatement(List.of("trips", "drivers"),
                 List.of(new Predicate("distance", Comparison.GREATER_THAN, 50L)),
                 List.of(new JoinPredicate("driver_id", "id")));
@@ -125,7 +125,7 @@ class PlannerJoinTest {
                 """);
         engine.copyFile("cities", citiesCsv.toString());
 
-        Planner planner = new Planner(engine);
+        Planner planner = new Planner(engine, JoinMode.SYNTAX);
         // city_code belongs to trips (the base table), so the second fold step
         // must resolve its build column against the accumulated trips+drivers
         // schema, not just drivers' own schema.

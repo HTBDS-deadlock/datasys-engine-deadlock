@@ -2,6 +2,7 @@ package dk.itu.datasys;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -11,16 +12,30 @@ import org.slf4j.LoggerFactory;
 /**
  * Turns a bound SELECT statement into an operator pipeline. This is where
  * partition pruning happens, based on each partition's min/max summary in the
- * catalog -- no data file is opened while planning. Multi-table SELECTs are
- * folded left-deep, in FROM-list order, into a chain of HashJoinOperators.
+ * catalog -- no data file is opened while planning.
+ *
+ * Multi-table SELECTs are joined in an order chosen by the JoinMode:
+ * OPTIMIZED estimates every table and join from catalog statistics (row
+ * counts, NDV) and orders the joins greedily, smallest estimated intermediate
+ * result first, with the smaller estimated input building each hash table;
+ * SYNTAX folds left-deep in FROM-list order with the join so far always
+ * building, exactly as in week 10. A final projection restores FROM-list
+ * column order, so SELECT * does not depend on the plan.
+ * See docs/optimizer-design.md.
  */
 public final class Planner {
     private static final Logger LOGGER = LoggerFactory.getLogger(Planner.class);
 
     private final StorageEngine engine;
+    private final JoinMode mode;
 
     public Planner(StorageEngine engine) {
+        this(engine, JoinMode.OPTIMIZED);
+    }
+
+    public Planner(StorageEngine engine, JoinMode mode) {
         this.engine = engine;
+        this.mode = mode;
     }
 
     public Plan plan(SelectStatement statement) {
@@ -62,49 +77,149 @@ public final class Planner {
                     predicate.comparison(), predicate.constant()));
         }
 
+        // Scan (and estimate) every table in FROM-list order, so the ScanStats
+        // keep FROM-list order whatever the join order.
         List<ScanStats> stats = new ArrayList<>();
-        ScanResult base = scanTable(tableSnapshots.get(0), filtersPerTable.get(0));
-        stats.add(base.stats());
-        Operator root = base.root();
-
-        if (tableCount > 1) {
-            // Throws unless the join predicates fold left-to-right unambiguously.
-            List<JoinPredicate> foldSteps = joinedSchema.resolveFoldOrder(statement.joins());
-
-            for (int i = 1; i < tableCount; i++) {
-                ScanResult next = scanTable(tableSnapshots.get(i), filtersPerTable.get(i));
-                stats.add(next.stats());
-
-                JoinPredicate predicate = foldSteps.get(i - 1);
-                // The side whose column belongs to the new table is the probe
-                // side; the other side (already in the joined set) is the build
-                // side -- the accumulated join so far is always the build side.
-                boolean leftIsNewTable = joinedSchema.tableIndexOf(predicate.leftColumn()) == i;
-                String probeColumn = leftIsNewTable ? predicate.leftColumn() : predicate.rightColumn();
-                String buildColumn = leftIsNewTable ? predicate.rightColumn() : predicate.leftColumn();
-
-                // Keys by position, not name: in a self-join the joined-so-far
-                // row holds the same column name twice. The joined-so-far row
-                // is a prefix of the full concatenated row, so its row index
-                // is valid here.
-                root = new HashJoinOperator(root, joinedSchema.rowIndexOf(buildColumn), buildColumn,
-                        next.root(), joinedSchema.indexInTable(probeColumn), probeColumn);
-            }
+        List<ScanResult> scans = new ArrayList<>();
+        List<JoinOrderer.TableEstimate> estimates = new ArrayList<>();
+        for (int i = 0; i < tableCount; i++) {
+            ScanResult scan = scanTable(tableSnapshots.get(i), statement.aliases().get(i), filtersPerTable.get(i));
+            scans.add(scan);
+            stats.add(scan.stats());
+            estimates.add(scan.estimate());
         }
 
-        if (!statement.columns().isEmpty()) {
-            List<Integer> columnIndexes = statement.columns().stream().map(joinedSchema::rowIndexOf).toList();
+        JoinOrderer.JoinOrder order = joinOrder(statement, joinedSchema, estimates);
+
+        // Build the tree. layout lists the FROM positions whose columns make up
+        // the current row, in row order; it locates join keys and output columns.
+        int first = order.tables().get(0);
+        Operator root = scans.get(first).root();
+        List<Integer> layout = new ArrayList<>(List.of(first));
+        String shape = statement.aliases().get(first);
+        long currentEst = estimates.get(first).rows();
+
+        for (JoinOrderer.Step step : order.steps()) {
+            int table = step.table();
+            JoinOrderer.JoinEdge edge = step.edge();
+            int planSide = edge.other(table);
+            String planColumn = qualified(statement, planSide, edge.columnOf(planSide));
+            String tableColumn = qualified(statement, table, edge.columnOf(table));
+            long tableEst = estimates.get(table).rows();
+
+            // The smaller estimated input builds; on a tie the join so far builds.
+            // -j syntax: the join so far always builds, as in week 10.
+            boolean planBuilds = mode == JoinMode.SYNTAX || currentEst <= tableEst;
+            List<Integer> tableLayout = List.of(table);
+            int planKey = rowIndexOf(planColumn, layout, joinedSchema, perTableSchema);
+            int tableKey = joinedSchema.indexInTable(tableColumn);
+
+            List<Integer> joinedLayout = new ArrayList<>(planBuilds ? layout : tableLayout);
+            joinedLayout.addAll(planBuilds ? tableLayout : layout);
+            String tables = String.join(";", joinedLayout.stream().map(statement.aliases()::get).toList());
+
+            if (planBuilds) {
+                root = new HashJoinOperator(root, planKey, planColumn, scans.get(table).root(), tableKey,
+                        tableColumn, tables, step.estRows());
+                shape = "J(" + shape + " " + statement.aliases().get(table) + ")";
+            } else {
+                root = new HashJoinOperator(scans.get(table).root(), tableKey, tableColumn, root, planKey,
+                        planColumn, tables, step.estRows());
+                shape = "J(" + statement.aliases().get(table) + " " + shape + ")";
+            }
+            layout = joinedLayout;
+            currentEst = step.estRows();
+        }
+
+        // Output columns: the SELECT list, or every column in FROM-list order
+        // for SELECT *, located in the row the plan actually produces.
+        List<String> outputColumns = statement.columns();
+        List<Integer> columnIndexes = new ArrayList<>();
+        if (outputColumns.isEmpty()) {
+            for (int t = 0; t < tableCount; t++) {
+                int offset = offsetOf(t, layout, perTableSchema);
+                for (int c = 0; c < perTableSchema.get(t).size(); c++) {
+                    columnIndexes.add(offset + c);
+                }
+            }
+        } else {
+            for (String column : outputColumns) {
+                columnIndexes.add(rowIndexOf(column, layout, joinedSchema, perTableSchema));
+            }
+        }
+        if (!outputColumns.isEmpty() || !isIdentity(columnIndexes)) {
             root = new ProjectOperator(root, columnIndexes);
         }
 
-        return new Plan(root, stats);
+        List<String> joinOrder = order.tables().stream().map(statement.aliases()::get).toList();
+        return new Plan(root, stats, joinOrder, mode, shape);
     }
 
-    private ScanResult scanTable(StorageEngine.TableSnapshot snapshot, List<Predicate> filters) {
+    /** The join order for the mode; single-table SELECTs have none to choose. */
+    private JoinOrderer.JoinOrder joinOrder(SelectStatement statement, JoinedSchema joinedSchema,
+            List<JoinOrderer.TableEstimate> estimates) {
+        if (statement.tables().size() == 1) {
+            return new JoinOrderer.JoinOrder(List.of(0), List.of());
+        }
+        if (mode == JoinMode.SYNTAX) {
+            // Throws unless the join predicates fold left-to-right unambiguously.
+            List<JoinPredicate> foldSteps = joinedSchema.resolveFoldOrder(statement.joins());
+            List<Integer> fromOrder = new ArrayList<>();
+            for (int i = 0; i < statement.tables().size(); i++) {
+                fromOrder.add(i);
+            }
+            List<JoinOrderer.JoinEdge> stepEdges = foldSteps.stream().map(p -> edge(p, joinedSchema)).toList();
+            return JoinOrderer.inOrder(estimates, fromOrder, stepEdges);
+        }
+        List<JoinOrderer.JoinEdge> edges = statement.joins().stream().map(p -> edge(p, joinedSchema)).toList();
+        return JoinOrderer.greedy(estimates, edges);
+    }
+
+    private static JoinOrderer.JoinEdge edge(JoinPredicate predicate, JoinedSchema joinedSchema) {
+        return new JoinOrderer.JoinEdge(
+                joinedSchema.tableIndexOf(predicate.leftColumn()), JoinedSchema.bareName(predicate.leftColumn()),
+                joinedSchema.tableIndexOf(predicate.rightColumn()), JoinedSchema.bareName(predicate.rightColumn()),
+                predicate.leftColumn() + "=" + predicate.rightColumn());
+    }
+
+    /** column qualified with its table's alias, so it resolves even in a self-join. */
+    private static String qualified(SelectStatement statement, int table, String bareColumn) {
+        return statement.aliases().get(table) + "." + bareColumn;
+    }
+
+    /** columnName's index in a row whose tables appear in layout order. */
+    private static int rowIndexOf(String columnName, List<Integer> layout, JoinedSchema joinedSchema,
+            List<List<ColumnSpec>> perTableSchema) {
+        int table = joinedSchema.tableIndexOf(columnName);
+        return offsetOf(table, layout, perTableSchema) + joinedSchema.indexInTable(columnName);
+    }
+
+    private static int offsetOf(int table, List<Integer> layout, List<List<ColumnSpec>> perTableSchema) {
+        int offset = 0;
+        for (int t : layout) {
+            if (t == table) {
+                return offset;
+            }
+            offset += perTableSchema.get(t).size();
+        }
+        throw new IllegalStateException("table " + table + " is not part of the row");
+    }
+
+    private static boolean isIdentity(List<Integer> columnIndexes) {
+        for (int i = 0; i < columnIndexes.size(); i++) {
+            if (columnIndexes.get(i) != i) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private ScanResult scanTable(StorageEngine.TableSnapshot snapshot, String alias, List<Predicate> filters) {
         String tableName = snapshot.tableName();
 
         Operator root;
         ScanStats stats;
+        List<Integer> survivingPartitions;
         if (filters.isEmpty()) {
             int partitionsTotal = engine.partitionCount(snapshot);
             List<Integer> allPartitions = new ArrayList<>(partitionsTotal);
@@ -114,6 +229,7 @@ public final class Planner {
             }
             root = new ScanOperator(engine, snapshot, allPartitions, null);
             stats = new ScanStats(partitionsTotal, partitionsTotal, 0);
+            survivingPartitions = allPartitions;
         } else {
             int partitionsTotal = engine.partitionCount(snapshot);
 
@@ -124,7 +240,7 @@ public final class Planner {
                 columnStatsPerFilter.add(engine.columnStats(snapshot, predicate.columnName()));
             }
 
-            List<Integer> survivingPartitions = new ArrayList<>();
+            survivingPartitions = new ArrayList<>();
             // a partition is pruned if ANY filter's min/max rules it out.
             for (int p = 0; p < partitionsTotal; p++) {
                 boolean prune = false;
@@ -157,9 +273,52 @@ public final class Planner {
             }
         }
 
-        return new ScanResult(root, stats);
+        return new ScanResult(root, stats, estimate(snapshot, alias, survivingPartitions, filters));
     }
 
-    private record ScanResult(Operator root, ScanStats stats) {
+    /**
+     * The table's estimated size after pruning and filters, and the NDV of
+     * each of its columns (docs/optimizer-design.md, section 4). NDVs come
+     * from the surviving partitions only; an equality filter sets its
+     * column's NDV to 1, and every NDV is clamped to the estimated rows.
+     */
+    private JoinOrderer.TableEstimate estimate(StorageEngine.TableSnapshot snapshot, String alias,
+            List<Integer> survivingPartitions, List<Predicate> filters) {
+        List<Integer> rowCounts = engine.partitionRowCounts(snapshot);
+        List<Integer> survivingRowCounts = survivingPartitions.stream().map(rowCounts::get).toList();
+        long rows = Estimator.baseTable(survivingRowCounts);
+
+        Map<String, Long> ndv = new LinkedHashMap<>();
+        for (ColumnSpec column : engine.schema(snapshot)) {
+            List<Long> partitionNdvs = engine.columnNdvs(snapshot, column.name());
+            List<Long> surviving = new ArrayList<>();
+            for (int p : survivingPartitions) {
+                surviving.add(partitionNdvs.get(p));
+            }
+            long columnNdv = Estimator.tableNdv(surviving);
+            if (columnNdv == Estimator.UNKNOWN_NDV) {
+                LOGGER.debug("table={} column={} ndv=unknown", alias, column.name());
+            }
+            ndv.put(column.name(), columnNdv);
+        }
+
+        // Independence: the filters' selectivities multiply, rounded once.
+        double selectivity = 1.0;
+        for (Predicate predicate : filters) {
+            selectivity *= Estimator.selectivity(ndv.get(predicate.columnName()), predicate.comparison());
+        }
+        for (Predicate predicate : filters) {
+            if (predicate.comparison() == Comparison.EQUALS) {
+                ndv.put(predicate.columnName(), 1L);
+            }
+        }
+        long estRows = Estimator.applySelectivity(rows, selectivity);
+        ndv.replaceAll((column, value) -> Estimator.clampNdv(value, estRows));
+
+        LOGGER.debug("table={} rows={} filters={} estRows={}", alias, rows, filters.size(), estRows);
+        return new JoinOrderer.TableEstimate(alias, estRows, ndv);
+    }
+
+    private record ScanResult(Operator root, ScanStats stats, JoinOrderer.TableEstimate estimate) {
     }
 }
