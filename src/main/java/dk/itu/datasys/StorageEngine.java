@@ -71,13 +71,14 @@ public final class StorageEngine implements AutoCloseable {
     private final Object partitionWriteLock = new Object();
     /**
      * Test seam invoked immediately before commit validation. Production leaves
-     * it as a no-op; concurrency tests can park a writer here deterministically.
+     * it as a no-op; concurrency tests can park a writer here
+     * deterministically.
      */
     volatile Runnable beforeCommit = () -> {
     };
     private final Map<String, TableSchema> tables = new ConcurrentHashMap<>();
-    private final Map<String, ConcurrentNavigableMap<Integer, TableSchema>> versionHistory =
-            new ConcurrentHashMap<>();
+    private final Map<String, ConcurrentNavigableMap<Integer, TableSchema>> versionHistory
+            = new ConcurrentHashMap<>();
     private ScanStats lastScanStats;
 
     // StorageEngine constructor, which takes a data directory and an optional
@@ -234,8 +235,7 @@ public final class StorageEngine implements AutoCloseable {
 
         synchronized (partitionWriteLock) {
             boolean dataFileAlreadyExists = Files.exists(dataFilePath);
-            try (RandomAccessFile raf = new RandomAccessFile(dataFilePath.toFile(), "rw");
-                    BufferedReader reader = Files.newBufferedReader(Path.of(csvFilePath), StandardCharsets.UTF_8)) {
+            try (RandomAccessFile raf = new RandomAccessFile(dataFilePath.toFile(), "rw"); BufferedReader reader = Files.newBufferedReader(Path.of(csvFilePath), StandardCharsets.UTF_8)) {
 
                 if (isNewFile && !dataFileAlreadyExists) {
                     raf.write(MAGIC);
@@ -444,7 +444,7 @@ public final class StorageEngine implements AutoCloseable {
     public DeleteResult delete(TableSnapshot snapshot, Optional<Predicate> predicate) {
         String tableName = snapshot.tableName;
         TableSnapshot attemptSnapshot = snapshot;
-        for (int attempt = 1; ; attempt++) {
+        for (int attempt = 1;; attempt++) {
             try {
                 return deleteAtSnapshot(attemptSnapshot, predicate);
             } catch (ConflictException conflict) {
@@ -466,6 +466,7 @@ public final class StorageEngine implements AutoCloseable {
         // one decision per partition: either it is carried over unchanged, or it
         // is rewritten and carries the rows that survive the predicate
         record Decision(PartitionInfo carried, List<Object[]> rewrite) {
+
         }
         List<Decision> decisions = new ArrayList<>();
         int rowsDeleted = 0;
@@ -473,15 +474,24 @@ public final class StorageEngine implements AutoCloseable {
         if (schema.dataFile != null) {
             int columnIndex = predicate.map(p -> columnIndex(schema.columns, p.columnName())).orElse(-1);
             try (RandomAccessFile raf = new RandomAccessFile(dataDirectory.resolve(schema.dataFile).toFile(), "r")) {
-                validateFileHeader(raf);
+                validateFileHeader(raf); // magic number is attached to our file. ("PAX1")
+
+                // "No match" means the stats prove no match. Min/max shows no row can match, 
+                // and the rows are never actually read.
+                // The partition is only added to the decisions list.
+                // It ends up in v2 only if at least one other partition gets rewritten.
+                // If nothing is rewritten, no new version is created at all
                 for (PartitionInfo partition : schema.partitions) {
-                    boolean mayMatch = predicate.isEmpty() || !canPrune(predicate.get().comparison(),
-                            predicate.get().constant(),
-                            partition.stats.get(predicate.get().columnName())[0],
-                            partition.stats.get(predicate.get().columnName())[1]);
-                    if (!mayMatch) {
+                    // bool can be true if there is no where clause hence all rows shoudl be deleted.
+                    // || or when the min/max cannot outrule.  
+                    boolean mayMatch = predicate.isEmpty()
+                            || !canPrune(predicate.get().comparison(),
+                                    predicate.get().constant(),
+                                    partition.stats.get(predicate.get().columnName())[0],
+                                    partition.stats.get(predicate.get().columnName())[1]);
+                    if (!mayMatch) { // if no  matches then bring the partitions into the next version
                         decisions.add(new Decision(partition, null));
-                        continue;
+                        continue; // skips rest of the current forloop and onto tnext element in the loop. 
                     }
 
                     List<Object[]> rows = readPartition(raf, partition, schema.columns);
@@ -507,6 +517,8 @@ public final class StorageEngine implements AutoCloseable {
         }
 
         int partitionsCarried = (int) decisions.stream().filter(d -> d.carried() != null).count();
+        // bad naming on the follow var as it has not been rewritten yet but will later. 
+        // get the numbers of partition to write
         int partitionsRewritten = decisions.size() - partitionsCarried;
 
         int version = schema.version;
@@ -539,7 +551,7 @@ public final class StorageEngine implements AutoCloseable {
             commitSchema(tableName, schema.version, updated);
             version = updated.version;
         }
-
+        //  Rows deleted, partitions physically rewritten, and partitions carried overw 
         return new DeleteResult(rowsDeleted, partitionsRewritten, partitionsCarried, version);
     }
 
@@ -687,8 +699,8 @@ public final class StorageEngine implements AutoCloseable {
     /**
      * Moves the file pointer past one column block of a PAX group without
      * decoding the values. LONG and DOUBLE values are fixed at 8 bytes, so the
-     * whole block is skipped in one jump. STRING values have different
-     * lengths, so each length prefix is read to know how far to jump.
+     * whole block is skipped in one jump. STRING values have different lengths,
+     * so each length prefix is read to know how far to jump.
      *
      * @param raf
      * @param type
@@ -697,7 +709,8 @@ public final class StorageEngine implements AutoCloseable {
      */
     private static void skipColumn(RandomAccessFile raf, ColumnType type, int groupSize) throws IOException {
         switch (type) {
-            case LONG, DOUBLE -> raf.seek(raf.getFilePointer() + (long) groupSize * 8);
+            case LONG, DOUBLE ->
+                raf.seek(raf.getFilePointer() + (long) groupSize * 8);
             case STRING -> {
                 for (int r = 0; r < groupSize; r++) {
                     int length = raf.readInt();
@@ -918,7 +931,7 @@ public final class StorageEngine implements AutoCloseable {
     private TableSchema commitCopy(String tableName, TableSchema base, String dataFileName,
             List<PartitionInfo> appendedPartitions) {
         TableSchema commitBase = base;
-        for (int attempt = 1; ; attempt++) {
+        for (int attempt = 1;; attempt++) {
             List<PartitionInfo> allPartitions = new ArrayList<>(commitBase.partitions);
             allPartitions.addAll(appendedPartitions);
 
@@ -1405,6 +1418,7 @@ public final class StorageEngine implements AutoCloseable {
      * A stable reference to one committed table schema for a statement.
      */
     public static final class TableSnapshot {
+
         private final String tableName;
         private final TableSchema schema;
 

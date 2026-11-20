@@ -28,7 +28,10 @@ public final class Executor {
         this(engine, JoinMode.OPTIMIZED);
     }
 
-    /** mode: how SELECTs order their joins (-j optimized, the default, or -j syntax). */
+    /**
+     * mode: how SELECTs order their joins (-j optimized, the default, or -j
+     * syntax).
+     */
     public Executor(StorageEngine engine, JoinMode mode) {
         this.engine = engine;
         this.binder = new Binder(engine);
@@ -88,7 +91,7 @@ public final class Executor {
                 yield Optional.empty();
             }
             case DeleteStatement s -> {
-                DeleteResult result = engine.delete(snapshots.get(s.tableName()), s.where());
+                DeleteResult result = engine.delete(snapshots.get(s.tableName()), s.where()); // sends a refernce of our current table in. 
                 LOGGER.debug(
                         "statement=DELETE table={} rowsDeleted={} partitionsRewritten={} partitionsCarried={} version={} durationMs={}",
                         s.tableName(), result.rowsDeleted(), result.partitionsRewritten(),
@@ -116,10 +119,14 @@ public final class Executor {
 
     private static List<String> tableNames(Statement statement) {
         return switch (statement) {
-            case CreateTableStatement s -> List.of();
-            case CopyStatement s -> List.of(s.tableName());
-            case DeleteStatement s -> List.of(s.tableName());
-            case SelectStatement s -> s.tableNames();
+            case CreateTableStatement s ->
+                List.of();
+            case CopyStatement s ->
+                List.of(s.tableName());
+            case DeleteStatement s ->
+                List.of(s.tableName());
+            case SelectStatement s ->
+                s.tableNames();
         };
     }
 }

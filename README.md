@@ -23,6 +23,15 @@ COPY trips FROM 'src/test/resources/trips.csv';"
 ./engine -f q.sql             # run a script file
 ```
 
+```bash Delete and see changes to ndvs in catalog.json 
+1. Before: look at the rows.
+./engine -c "SELECT city, distance FROM trips"
+2. The DELETE. It removes Aalborg (210) and Esbjerg (299), leaving 6 rows.
+./engine -c "DELETE FROM trips WHERE distance > 200"
+3. After: check the result.
+./engine -c "SELECT city, distance FROM trips"
+```
+
 ```bash GroupBY 
 mvn package
 

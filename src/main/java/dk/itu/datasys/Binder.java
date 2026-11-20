@@ -9,6 +9,7 @@ import java.util.Set;
 
 // Binder is a verifier that checks if our SQL statements are actually possible accordingly to our
 public final class Binder {
+
     private final StorageEngine engine;
 
     public Binder(StorageEngine engine) {
@@ -16,36 +17,50 @@ public final class Binder {
     }
 
     /**
-     * Validates s against the catalog; throws IllegalArgumentException on the first
-     * violation.
+     * Validates s against the catalog; throws IllegalArgumentException on the
+     * first violation.
      */
     public void bind(Statement s) {
         bind(s, snapshotsFor(s));
     }
 
-    /** Convenience overload for callers that already pinned a single table's snapshot. */
+    /**
+     * Convenience overload for callers that already pinned a single table's
+     * snapshot.
+     */
     public void bind(Statement s, Optional<StorageEngine.TableSnapshot> snapshot) {
         Map<String, StorageEngine.TableSnapshot> snapshots = new LinkedHashMap<>();
         snapshot.ifPresent(snap -> snapshots.put(snap.tableName(), snap));
         bind(s, snapshots);
     }
 
-    /** snapshots maps each table the statement reads to the snapshot pinned for it. */
+    /**
+     * snapshots maps each table the statement reads to the snapshot pinned for
+     * it.
+     */
     public void bind(Statement s, Map<String, StorageEngine.TableSnapshot> snapshots) {
         switch (s) {
-            case CreateTableStatement stmt -> bindCreateTable(stmt);
-            case CopyStatement stmt -> bindCopy(stmt, snapshots);
-            case SelectStatement stmt -> bindSelect(stmt, snapshots);
-            case DeleteStatement stmt -> bindDelete(stmt, snapshots);
+            case CreateTableStatement stmt ->
+                bindCreateTable(stmt);
+            case CopyStatement stmt ->
+                bindCopy(stmt, snapshots);
+            case SelectStatement stmt ->
+                bindSelect(stmt, snapshots);
+            case DeleteStatement stmt ->
+                bindDelete(stmt, snapshots);
         }
     }
 
     private Map<String, StorageEngine.TableSnapshot> snapshotsFor(Statement statement) {
         List<String> tableNames = switch (statement) {
-            case CreateTableStatement stmt -> List.of();
-            case CopyStatement stmt -> List.of(stmt.tableName());
-            case SelectStatement stmt -> stmt.tableNames();
-            case DeleteStatement stmt -> List.of(stmt.tableName());
+            case CreateTableStatement stmt ->
+                List.of();
+            case CopyStatement stmt ->
+                List.of(stmt.tableName());
+            case SelectStatement stmt ->
+                stmt.tableNames();
+            case DeleteStatement stmt ->
+                List.of(stmt.tableName());
         };
         Map<String, StorageEngine.TableSnapshot> snapshots = new LinkedHashMap<>();
         for (String tableName : tableNames) {
@@ -140,7 +155,10 @@ public final class Binder {
         }
     }
 
-    /** Whether two references (bare or qualified) name the same column of the same FROM table. */
+    /**
+     * Whether two references (bare or qualified) name the same column of the
+     * same FROM table.
+     */
     static boolean sameColumn(String a, String b, JoinedSchema joinedSchema) {
         return joinedSchema.tableIndexOf(a) == joinedSchema.tableIndexOf(b)
                 && joinedSchema.indexInTable(a) == joinedSchema.indexInTable(b);
@@ -170,7 +188,9 @@ public final class Binder {
         List<ColumnSpec> schema = schema(stmt.tableName(), snapshots);
 
         stmt.where().ifPresent(predicate -> {
+            // checks if the colum exists. 
             ColumnSpec column = findColumn(schema, predicate.columnName());
+            // checks if the constant is correct. (eg: int and int)
             StorageEngine.validateConstantType(column.type(), predicate.constant());
         });
     }
