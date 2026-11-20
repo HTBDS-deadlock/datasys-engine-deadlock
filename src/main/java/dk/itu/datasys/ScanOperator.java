@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public final class ScanOperator implements Operator {
+
     private static final Logger LOGGER = LoggerFactory.getLogger(ScanOperator.class);
 
     private final StorageEngine engine;
@@ -51,8 +52,9 @@ public final class ScanOperator implements Operator {
 
     public Object[] next() {
         while (!rows.hasNext()) {
-            if (nextPartition == partitionNumbers.size())
+            if (nextPartition == partitionNumbers.size()) {
                 return null;
+            }
             rows = engine.readPartition(snapshot, partitionNumbers.get(nextPartition++), neededColumns).iterator();
         }
 
