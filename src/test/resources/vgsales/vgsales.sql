@@ -11,5 +11,5 @@ CREATE TABLE vgsales (
     other_sales DOUBLE,
     global_sales DOUBLE
 );
-COPY flights
+COPY vgsales
 FROM 'src\test\resources\vgsales\vgsales.csv';
