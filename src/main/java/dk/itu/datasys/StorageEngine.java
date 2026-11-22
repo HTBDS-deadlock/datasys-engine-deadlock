@@ -1,10 +1,13 @@
 package dk.itu.datasys;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -648,6 +651,10 @@ public final class StorageEngine implements AutoCloseable {
             Set<String> neededColumns) throws IOException {
         // seeks to the byte offset of the partition in the random access file
         raf.seek(partition.byteOffset);
+        // reads through a 64 KB buffer: the file is hit once per buffer fill instead
+        // of once per value, as a readLong()/readInt() directly on raf would
+        DataInputStream in = new DataInputStream(
+                new BufferedInputStream(Channels.newInputStream(raf.getChannel()), 1 << 16));
         // initializes an empty list to store the rows read from the partition, and a
         // counter for the number of rows read
         List<Object[]> rows = new ArrayList<>(partition.rowCount);
@@ -657,7 +664,7 @@ public final class StorageEngine implements AutoCloseable {
         while (rowsRead < partition.rowCount) {
             // reads the group size from the binary data file, which indicates how many rows
             // are in the current group
-            int groupSize = raf.readInt();
+            int groupSize = in.readInt();
             // initializes a 2D array to store the values of each column for the current
             // group of rows
             Object[][] columnValues = new Object[columns.size()][groupSize];
@@ -670,11 +677,11 @@ public final class StorageEngine implements AutoCloseable {
                 // skips the whole column block if the query does not use this column,
                 // leaving its values as null
                 if (neededColumns != null && !neededColumns.contains(columns.get(c).name())) {
-                    skipColumn(raf, type, groupSize);
+                    skipColumn(in, type, groupSize);
                     continue;
                 }
                 for (int r = 0; r < groupSize; r++) {
-                    columnValues[c][r] = readValue(raf, type);
+                    columnValues[c][r] = readValue(in, type);
                 }
             }
             // iterates through the rows in the current group, constructs an Object[] array
@@ -707,14 +714,14 @@ public final class StorageEngine implements AutoCloseable {
      * @param groupSize number of values in the column block
      * @throws IOException
      */
-    private static void skipColumn(RandomAccessFile raf, ColumnType type, int groupSize) throws IOException {
+    private static void skipColumn(DataInputStream in, ColumnType type, int groupSize) throws IOException {
         switch (type) {
             case LONG, DOUBLE ->
-                raf.seek(raf.getFilePointer() + (long) groupSize * 8);
+                in.skipNBytes((long) groupSize * 8);
             case STRING -> {
                 for (int r = 0; r < groupSize; r++) {
-                    int length = raf.readInt();
-                    raf.seek(raf.getFilePointer() + length);
+                    int length = in.readInt();
+                    in.skipNBytes(length);
                 }
             }
         }
@@ -730,17 +737,17 @@ public final class StorageEngine implements AutoCloseable {
      * column type
      * @throws IOException
      */
-    private static Object readValue(RandomAccessFile raf, ColumnType type) throws IOException {
-        // return switches on the column type to read the appropriate value from raf
+    private static Object readValue(DataInputStream in, ColumnType type) throws IOException {
+        // return switches on the column type to read the appropriate value from in
         return switch (type) {
             case LONG ->
-                raf.readLong();
+                in.readLong();
             case DOUBLE ->
-                raf.readDouble();
+                in.readDouble();
             case STRING -> {
-                int length = raf.readInt();
+                int length = in.readInt();
                 byte[] bytes = new byte[length];
-                raf.readFully(bytes);
+                in.readFully(bytes);
                 // we used UTF-8 encoding when writing the string, so we use it here to decode
                 // the bytes back into a string
                 yield new String(bytes, StandardCharsets.UTF_8);
