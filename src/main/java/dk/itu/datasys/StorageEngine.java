@@ -915,7 +915,7 @@ public final class StorageEngine implements AutoCloseable {
     private void commitSchema(String tableName, int baseVersion, TableSchema updated) {
         beforeCommit.run();
         synchronized (commitLock) {
-            TableSchema current = tables.get(tableName);
+            TableSchema current = tables.get(tableName); // key: "flights"
             if (current == null) {
                 throw new IllegalArgumentException("Unknown table: " + tableName);
             }
