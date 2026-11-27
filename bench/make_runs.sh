@@ -8,13 +8,13 @@ set -euo pipefail
 
 # log file -> configuration name
 declare -A CONFIGS=(
-  [logs/engine_syntax_cust_ship_order.log]=min
-  [logs/engine_syntax_orders_ship_cust.log]=max
-  [logs/engine_optimi_cust_ship_order.log]=opt_min_from
-  [logs/engine_optimi_orders_ship_cust.log]=opt_max_from
+  [bench/benchLogs/engine_syntax_cust_ship_order.log]=min
+  [bench/benchLogs/engine_syntax_orders_ship_cust.log]=max
+  [bench/benchLogs/engine_optimi_cust_ship_order.log]=opt_min_from
+  [bench/benchLogs/engine_optimi_orders_ship_cust.log]=opt_max_from
 )
-ORDER=(logs/engine_syntax_cust_ship_order.log logs/engine_syntax_orders_ship_cust.log
-       logs/engine_optimi_cust_ship_order.log logs/engine_optimi_orders_ship_cust.log)
+ORDER=(bench/benchLogs/engine_syntax_cust_ship_order.log bench/benchLogs/engine_syntax_orders_ship_cust.log
+       bench/benchLogs/engine_optimi_cust_ship_order.log bench/benchLogs/engine_optimi_orders_ship_cust.log)
 
 mkdir -p generated/joinbench
 : > generated/joinbench/logs.csv

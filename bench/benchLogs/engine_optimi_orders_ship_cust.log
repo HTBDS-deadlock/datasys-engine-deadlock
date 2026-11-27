@@ -1,0 +1,195 @@
+2026-11-26                  10:52:35.885,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,0,3,DEBUG,Engine,engine started
+2026-11-26                  10:52:35.994,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,0,3,DEBUG,SqlParser,statements=1 durationMs=23
+2026-11-26                  10:52:35.997,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Executor,executing statement=SELECT * FROM orders shipments customers WHERE c_city = 'city042' AND o_custname = s_custname AND s_custname = c_name;
+2026-11-26                  10:52:36.001,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders  partition=0  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.001,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders  partition=1  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.003,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders  partition=2  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.003,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders  partition=3  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.004,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders  partition=4  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.004,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders  partition=5  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.004,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders  partition=6  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.004,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders  partition=7  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.004,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders  partition=8  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.004,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders  partition=9  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.006,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=orders rows=100000 filters=0 estRows=100000
+2026-11-26                  10:52:36.007,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments  partition=0  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.007,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments  partition=1  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.007,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments  partition=2  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.007,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments  partition=3  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.008,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments  partition=4  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.008,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments  partition=5  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.008,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments  partition=6  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.008,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments  partition=7  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.008,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments  partition=8  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.008,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments  partition=9  decision=READ reason=noPredicate
+2026-11-26                  10:52:36.009,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=shipments rows=100000 filters=0 estRows=100000
+2026-11-26                  10:52:36.009,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=customers column=c_city comparison=EQUALS const=city042 partition=0 min=city000 max=city099 decision=READ
+2026-11-26                  10:52:36.009,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Planner,table=customers rows=1000 filters=1 estRows=10
+2026-11-26                  10:52:36.011,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,JoinOrder,plan=orders table=shipments join=o_custname=s_custname estRows=10000000
+2026-11-26                  10:52:36.011,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,JoinOrder,plan=shipments table=customers join=s_custname=c_name estRows=1000
+2026-11-26                  10:52:36.014,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,JoinOrder,plan=shipments;customers table=orders join=o_custname=s_custname estRows=100000
+2026-11-26                  10:52:36.024,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,ScanOperator,table=customers partitions=1 rowsOut=1000
+2026-11-26                  10:52:36.024,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,FilterOperator,column=c_city comparison=EQUALS const=city042 rowsIn=1000 rowsOut=10
+2026-11-26                  10:52:36.491,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,ScanOperator,table=shipments partitions=10 rowsOut=100000
+2026-11-26                  10:52:36.491,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,HashJoinOperator,tables=customers;shipments buildColumn=customers.c_name probeColumn=shipments.s_custname estRows=1000 rowsBuild=10 keys=10 rowsProbe=100000 rowsOut=1000
+2026-11-26                  10:52:36.947,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,ScanOperator,table=orders partitions=10 rowsOut=100000
+2026-11-26                  10:52:36.947,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,HashJoinOperator,tables=customers;shipments;orders buildColumn=shipments.s_custname probeColumn=orders.o_custname estRows=100000 rowsBuild=1000 keys=10 rowsProbe=100000 rowsOut=100000
+2026-11-26                  10:52:36.948,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,ProjectOperator,columns=8 rowsOut=100000
+2026-11-26                  10:52:36.950,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,1,3,DEBUG,Executor,statement=SELECT tables=orders;shipments;customers joinOrder=shipments;customers;orders mode=optimized plan=J(J(customers shipments) orders) rowsOut=100000 partitionsRead=21 partitionsPruned=0 durationMs=950
+2026-11-26                  10:52:39.128,53463a06-ec9f-48c2-ad2b-64bc0e092d9a,0,3,DEBUG,Engine,engine stopped
+2026-11-26                  10:52:47.011,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,0,3,DEBUG,Engine,engine started
+2026-11-26                  10:52:47.118,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,0,3,DEBUG,SqlParser,statements=1 durationMs=22
+2026-11-26                  10:52:47.121,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Executor,executing statement=SELECT * FROM orders shipments customers WHERE c_city = 'city042' AND o_custname = s_custname AND s_custname = c_name;
+2026-11-26                  10:52:47.124,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders  partition=0  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.125,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders  partition=1  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.125,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders  partition=2  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.125,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders  partition=3  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.125,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders  partition=4  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.125,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders  partition=5  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.125,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders  partition=6  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.125,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders  partition=7  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.125,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders  partition=8  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.125,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders  partition=9  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.127,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=orders rows=100000 filters=0 estRows=100000
+2026-11-26                  10:52:47.128,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments  partition=0  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.128,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments  partition=1  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.128,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments  partition=2  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.128,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments  partition=3  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.128,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments  partition=4  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.128,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments  partition=5  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.128,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments  partition=6  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.128,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments  partition=7  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.128,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments  partition=8  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.129,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments  partition=9  decision=READ reason=noPredicate
+2026-11-26                  10:52:47.129,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=shipments rows=100000 filters=0 estRows=100000
+2026-11-26                  10:52:47.129,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=customers column=c_city comparison=EQUALS const=city042 partition=0 min=city000 max=city099 decision=READ
+2026-11-26                  10:52:47.130,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Planner,table=customers rows=1000 filters=1 estRows=10
+2026-11-26                  10:52:47.131,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,JoinOrder,plan=orders table=shipments join=o_custname=s_custname estRows=10000000
+2026-11-26                  10:52:47.131,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,JoinOrder,plan=shipments table=customers join=s_custname=c_name estRows=1000
+2026-11-26                  10:52:47.134,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,JoinOrder,plan=shipments;customers table=orders join=o_custname=s_custname estRows=100000
+2026-11-26                  10:52:47.143,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,ScanOperator,table=customers partitions=1 rowsOut=1000
+2026-11-26                  10:52:47.143,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,FilterOperator,column=c_city comparison=EQUALS const=city042 rowsIn=1000 rowsOut=10
+2026-11-26                  10:52:47.596,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,ScanOperator,table=shipments partitions=10 rowsOut=100000
+2026-11-26                  10:52:47.596,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,HashJoinOperator,tables=customers;shipments buildColumn=customers.c_name probeColumn=shipments.s_custname estRows=1000 rowsBuild=10 keys=10 rowsProbe=100000 rowsOut=1000
+2026-11-26                  10:52:48.033,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,ScanOperator,table=orders partitions=10 rowsOut=100000
+2026-11-26                  10:52:48.034,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,HashJoinOperator,tables=customers;shipments;orders buildColumn=shipments.s_custname probeColumn=orders.o_custname estRows=100000 rowsBuild=1000 keys=10 rowsProbe=100000 rowsOut=100000
+2026-11-26                  10:52:48.034,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,ProjectOperator,columns=8 rowsOut=100000
+2026-11-26                  10:52:48.036,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,1,3,DEBUG,Executor,statement=SELECT tables=orders;shipments;customers joinOrder=shipments;customers;orders mode=optimized plan=J(J(customers shipments) orders) rowsOut=100000 partitionsRead=21 partitionsPruned=0 durationMs=913
+2026-11-26                  10:52:50.098,ad8f65f9-f285-48ad-9fd2-44e3ec4d17e4,0,3,DEBUG,Engine,engine stopped
+2026-11-26                  10:52:53.622,f936ee97-66d3-4aba-a6a1-cc0af780e357,0,3,DEBUG,Engine,engine started
+2026-11-26                  10:52:53.725,f936ee97-66d3-4aba-a6a1-cc0af780e357,0,3,DEBUG,SqlParser,statements=1 durationMs=21
+2026-11-26                  10:52:53.728,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Executor,executing statement=SELECT * FROM orders shipments customers WHERE c_city = 'city042' AND o_custname = s_custname AND s_custname = c_name;
+2026-11-26                  10:52:53.731,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders  partition=0  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.731,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders  partition=1  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.731,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders  partition=2  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.732,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders  partition=3  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.732,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders  partition=4  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.732,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders  partition=5  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.732,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders  partition=6  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.732,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders  partition=7  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.732,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders  partition=8  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.732,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders  partition=9  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.734,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=orders rows=100000 filters=0 estRows=100000
+2026-11-26                  10:52:53.735,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments  partition=0  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.735,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments  partition=1  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.735,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments  partition=2  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.735,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments  partition=3  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.735,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments  partition=4  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.735,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments  partition=5  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.736,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments  partition=6  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.736,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments  partition=7  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.736,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments  partition=8  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.736,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments  partition=9  decision=READ reason=noPredicate
+2026-11-26                  10:52:53.736,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=shipments rows=100000 filters=0 estRows=100000
+2026-11-26                  10:52:53.736,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=customers column=c_city comparison=EQUALS const=city042 partition=0 min=city000 max=city099 decision=READ
+2026-11-26                  10:52:53.737,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Planner,table=customers rows=1000 filters=1 estRows=10
+2026-11-26                  10:52:53.738,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,JoinOrder,plan=orders table=shipments join=o_custname=s_custname estRows=10000000
+2026-11-26                  10:52:53.738,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,JoinOrder,plan=shipments table=customers join=s_custname=c_name estRows=1000
+2026-11-26                  10:52:53.742,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,JoinOrder,plan=shipments;customers table=orders join=o_custname=s_custname estRows=100000
+2026-11-26                  10:52:53.752,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,ScanOperator,table=customers partitions=1 rowsOut=1000
+2026-11-26                  10:52:53.752,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,FilterOperator,column=c_city comparison=EQUALS const=city042 rowsIn=1000 rowsOut=10
+2026-11-26                  10:52:54.199,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,ScanOperator,table=shipments partitions=10 rowsOut=100000
+2026-11-26                  10:52:54.200,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,HashJoinOperator,tables=customers;shipments buildColumn=customers.c_name probeColumn=shipments.s_custname estRows=1000 rowsBuild=10 keys=10 rowsProbe=100000 rowsOut=1000
+2026-11-26                  10:52:54.644,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,ScanOperator,table=orders partitions=10 rowsOut=100000
+2026-11-26                  10:52:54.644,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,HashJoinOperator,tables=customers;shipments;orders buildColumn=shipments.s_custname probeColumn=orders.o_custname estRows=100000 rowsBuild=1000 keys=10 rowsProbe=100000 rowsOut=100000
+2026-11-26                  10:52:54.645,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,ProjectOperator,columns=8 rowsOut=100000
+2026-11-26                  10:52:54.647,f936ee97-66d3-4aba-a6a1-cc0af780e357,1,3,DEBUG,Executor,statement=SELECT tables=orders;shipments;customers joinOrder=shipments;customers;orders mode=optimized plan=J(J(customers shipments) orders) rowsOut=100000 partitionsRead=21 partitionsPruned=0 durationMs=917
+2026-11-26                  10:52:56.752,f936ee97-66d3-4aba-a6a1-cc0af780e357,0,3,DEBUG,Engine,engine stopped
+2026-11-26                  10:52:58.488,cb2280a8-7418-47d8-be18-2a0acb6fd67a,0,3,DEBUG,Engine,engine started
+2026-11-26                  10:52:58.591,cb2280a8-7418-47d8-be18-2a0acb6fd67a,0,3,DEBUG,SqlParser,statements=1 durationMs=20
+2026-11-26                  10:52:58.595,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Executor,executing statement=SELECT * FROM orders shipments customers WHERE c_city = 'city042' AND o_custname = s_custname AND s_custname = c_name;
+2026-11-26                  10:52:58.598,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders  partition=0  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.598,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders  partition=1  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.598,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders  partition=2  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.598,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders  partition=3  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.598,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders  partition=4  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.598,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders  partition=5  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.598,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders  partition=6  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.599,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders  partition=7  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.599,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders  partition=8  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.599,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders  partition=9  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.604,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=orders rows=100000 filters=0 estRows=100000
+2026-11-26                  10:52:58.604,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments  partition=0  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.605,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments  partition=1  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.605,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments  partition=2  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.605,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments  partition=3  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.605,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments  partition=4  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.605,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments  partition=5  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.605,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments  partition=6  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.605,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments  partition=7  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.605,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments  partition=8  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.605,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments  partition=9  decision=READ reason=noPredicate
+2026-11-26                  10:52:58.606,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=shipments rows=100000 filters=0 estRows=100000
+2026-11-26                  10:52:58.606,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=customers column=c_city comparison=EQUALS const=city042 partition=0 min=city000 max=city099 decision=READ
+2026-11-26                  10:52:58.607,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Planner,table=customers rows=1000 filters=1 estRows=10
+2026-11-26                  10:52:58.608,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,JoinOrder,plan=orders table=shipments join=o_custname=s_custname estRows=10000000
+2026-11-26                  10:52:58.608,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,JoinOrder,plan=shipments table=customers join=s_custname=c_name estRows=1000
+2026-11-26                  10:52:58.612,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,JoinOrder,plan=shipments;customers table=orders join=o_custname=s_custname estRows=100000
+2026-11-26                  10:52:58.622,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,ScanOperator,table=customers partitions=1 rowsOut=1000
+2026-11-26                  10:52:58.622,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,FilterOperator,column=c_city comparison=EQUALS const=city042 rowsIn=1000 rowsOut=10
+2026-11-26                  10:52:59.096,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,ScanOperator,table=shipments partitions=10 rowsOut=100000
+2026-11-26                  10:52:59.096,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,HashJoinOperator,tables=customers;shipments buildColumn=customers.c_name probeColumn=shipments.s_custname estRows=1000 rowsBuild=10 keys=10 rowsProbe=100000 rowsOut=1000
+2026-11-26                  10:52:59.534,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,ScanOperator,table=orders partitions=10 rowsOut=100000
+2026-11-26                  10:52:59.534,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,HashJoinOperator,tables=customers;shipments;orders buildColumn=shipments.s_custname probeColumn=orders.o_custname estRows=100000 rowsBuild=1000 keys=10 rowsProbe=100000 rowsOut=100000
+2026-11-26                  10:52:59.535,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,ProjectOperator,columns=8 rowsOut=100000
+2026-11-26                  10:52:59.538,cb2280a8-7418-47d8-be18-2a0acb6fd67a,1,3,DEBUG,Executor,statement=SELECT tables=orders;shipments;customers joinOrder=shipments;customers;orders mode=optimized plan=J(J(customers shipments) orders) rowsOut=100000 partitionsRead=21 partitionsPruned=0 durationMs=941
+2026-11-26                  10:53:01.608,cb2280a8-7418-47d8-be18-2a0acb6fd67a,0,3,DEBUG,Engine,engine stopped
+2026-11-26                  10:53:03.661,fb78010c-7c04-41f3-baaa-a91cab81b022,0,3,DEBUG,Engine,engine started
+2026-11-26                  10:53:03.768,fb78010c-7c04-41f3-baaa-a91cab81b022,0,3,DEBUG,SqlParser,statements=1 durationMs=21
+2026-11-26                  10:53:03.772,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Executor,executing statement=SELECT * FROM orders shipments customers WHERE c_city = 'city042' AND o_custname = s_custname AND s_custname = c_name;
+2026-11-26                  10:53:03.774,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders  partition=0  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.774,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders  partition=1  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.775,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders  partition=2  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.775,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders  partition=3  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.775,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders  partition=4  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.775,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders  partition=5  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.775,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders  partition=6  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.775,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders  partition=7  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.775,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders  partition=8  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.775,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders  partition=9  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.777,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=orders rows=100000 filters=0 estRows=100000
+2026-11-26                  10:53:03.777,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments  partition=0  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.778,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments  partition=1  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.778,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments  partition=2  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.778,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments  partition=3  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.778,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments  partition=4  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.778,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments  partition=5  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.778,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments  partition=6  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.778,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments  partition=7  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.779,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments  partition=8  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.779,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments  partition=9  decision=READ reason=noPredicate
+2026-11-26                  10:53:03.779,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=shipments rows=100000 filters=0 estRows=100000
+2026-11-26                  10:53:03.779,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=customers column=c_city comparison=EQUALS const=city042 partition=0 min=city000 max=city099 decision=READ
+2026-11-26                  10:53:03.780,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Planner,table=customers rows=1000 filters=1 estRows=10
+2026-11-26                  10:53:03.782,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,JoinOrder,plan=orders table=shipments join=o_custname=s_custname estRows=10000000
+2026-11-26                  10:53:03.782,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,JoinOrder,plan=shipments table=customers join=s_custname=c_name estRows=1000
+2026-11-26                  10:53:03.785,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,JoinOrder,plan=shipments;customers table=orders join=o_custname=s_custname estRows=100000
+2026-11-26                  10:53:03.794,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,ScanOperator,table=customers partitions=1 rowsOut=1000
+2026-11-26                  10:53:03.794,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,FilterOperator,column=c_city comparison=EQUALS const=city042 rowsIn=1000 rowsOut=10
+2026-11-26                  10:53:04.255,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,ScanOperator,table=shipments partitions=10 rowsOut=100000
+2026-11-26                  10:53:04.255,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,HashJoinOperator,tables=customers;shipments buildColumn=customers.c_name probeColumn=shipments.s_custname estRows=1000 rowsBuild=10 keys=10 rowsProbe=100000 rowsOut=1000
+2026-11-26                  10:53:04.706,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,ScanOperator,table=orders partitions=10 rowsOut=100000
+2026-11-26                  10:53:04.706,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,HashJoinOperator,tables=customers;shipments;orders buildColumn=shipments.s_custname probeColumn=orders.o_custname estRows=100000 rowsBuild=1000 keys=10 rowsProbe=100000 rowsOut=100000
+2026-11-26                  10:53:04.706,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,ProjectOperator,columns=8 rowsOut=100000
+2026-11-26                  10:53:04.708,fb78010c-7c04-41f3-baaa-a91cab81b022,1,3,DEBUG,Executor,statement=SELECT tables=orders;shipments;customers joinOrder=shipments;customers;orders mode=optimized plan=J(J(customers shipments) orders) rowsOut=100000 partitionsRead=21 partitionsPruned=0 durationMs=935
+2026-11-26                  10:53:06.857,fb78010c-7c04-41f3-baaa-a91cab81b022,0,3,DEBUG,Engine,engine stopped

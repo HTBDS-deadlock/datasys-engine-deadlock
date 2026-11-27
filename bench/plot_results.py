@@ -63,16 +63,28 @@ def main():
             key = (config, field(message, "tables"))
             joins.setdefault(key, set()).add((int(field(message, "estRows")), int(field(message, "rowsOut"))))
 
+    rows = []
+    for c in CONFIGS:
+        for (config, tables), values in sorted(joins.items(), key=lambda kv: len(kv[0][1])):
+            if config != c:
+                continue
+            for est, out in sorted(values):
+                note = "" if len(values) == 1 else " (varies across runs)"
+                rows.append([c, tables.replace(';', ' join '), f"{est:,}", f"{out:,}", f"{est / out:.2f}{note}"])
+
+    # Padded columns, so the table is readable as plain text too.
+    header = ["Configuration", "Join (build side first)", "estRows", "rowsOut", "est / actual"]
+    widths = [max(len(r[i]) for r in rows + [header]) for i in range(len(header))]
+    right = [False, False, True, True, True]
+
+    def line(cells):
+        return "| " + " | ".join(c.rjust(w) if r else c.ljust(w) for c, w, r in zip(cells, widths, right)) + " |\n"
+
     with open("bench/intermediate_sizes.md", "w", encoding="utf-8", newline="\n") as f:
-        f.write("| Configuration | Join (build side first) | estRows | rowsOut | est / actual |\n")
-        f.write("|---|---|---:|---:|---:|\n")
-        for c in CONFIGS:
-            for (config, tables), values in sorted(joins.items(), key=lambda kv: len(kv[0][1])):
-                if config != c:
-                    continue
-                for est, out in sorted(values):
-                    note = "" if len(values) == 1 else " (varies across runs)"
-                    f.write(f"| {c} | {tables.replace(';', ' join ')} | {est:,} | {out:,} | {est / out:.2f}{note} |\n")
+        f.write(line(header))
+        f.write("|" + "|".join(("-" * (w + 1) + ":") if r else ("-" * (w + 2)) for w, r in zip(widths, right)) + "|\n")
+        for r in rows:
+            f.write(line(r))
 
     # Chart: one dot per run, a median tick per configuration.
     ink, muted, grid, series = "#0b0b0b", "#52514e", "#e4e3df", "#2a78d6"

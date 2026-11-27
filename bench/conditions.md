@@ -10,4 +10,4 @@
 | Data | `bench/generate_joinbench.py`, seed 42: 1,000 customers, 100 cities, 100,000 orders, 100,000 shipments |
 | Partitions | `DEFAULT_MAX_ROWS_PER_PARTITION` = 10,240 (21 partitions in total) |
 | Runs | 5 per configuration; every run is a new `./engine` process (cold JVM, warm OS file cache) |
-| Output | stdout redirected to `/dev/null`; `durationMs` from the `statement=SELECT` log line |
+| Output | `durationMs` from the `statement=SELECT` log line; it is measured before the rows are printed, so printing is not included |
